@@ -4,7 +4,7 @@
 %  c(main), main:main().
 -module(main).
 
--export([main/0,client/1,binary_search/0,binary_search/3,insert/4,contains/4,binary_search_handle_response/0,client_handle_response/0,node_handle_request/3]).
+-export([main/0,client/1,binary_search/0,insert/4,contains/4,client_handle_response/0]).
 
 
 main() ->
@@ -31,13 +31,28 @@ client_handle_response() ->
     end.
 	
 
-binary_search() -> binary_search(undefined,undefined,undefined).
-binary_search(Value, Left, Right) ->
-	node_handle_request(Value, Left, Right),
-	binary_search_handle_response(),
-	binary_search(Value, Left, Right).
+binary_search() -> 
+	receive
+        {insert, ValueToInsert} ->
+			Root = spawn(main, actor_node, [ValueToInsert,undefined,undefined]),
+			client ! {insert,ValueToInsert,true};
+			
+		{Op, Value} ->
+			client ! {Op,Value,false}
+	end.
+			
+binary_search(Root) ->
+	receive
+        {insert, ValueToInsert} ->
+			Root ! {insert, ValueToInsert};
+		{delete, ValueToDelete} ->
+			Root ! {delete, ValueToDelete};
+		{contains, ValueToFind} ->
+			Root ! {contains, ValueToFind}
+    end,
+	binary_search(Root).
 
-node_handle_request(Value, Left, Right) ->
+actor_node(Value, Left, Right) ->
 	receive
         {insert, ValueToInsert} ->
             io:format("Insert: ~p\n", [ValueToInsert]),
@@ -49,20 +64,6 @@ node_handle_request(Value, Left, Right) ->
             contains(Value, Left, Right, ValueToFind)
     end.
 
-binary_search_handle_response() ->
-	io:format("handling response ~p \n", []),
-	receive
-		{contains, ValueToFind, Response} ->
-			io:format("binary_search_handle_response, contains?: ~p\n", [ValueToFind]),
-			client ! {contains, ValueToFind, Response};
-		{insert, ValueToInsert, Response} ->
-			io:format("binary_search_handle_response, insert?: ~p\n", [ValueToInsert]),
-			client ! {insert, ValueToInsert, Response}
-    end.
-
-actor_node(Value, Left, Right) ->
-	node_handle_request(Value, Left, Right).
-
 insert(Value, Left, Right, ValueToInsert) ->
 	RootPid = whereis(binary_search_root),
 	case ValueToInsert of 
@@ -72,17 +73,9 @@ insert(Value, Left, Right, ValueToInsert) ->
       	N when N < Value ->
 			if 
       		Left == undefined ->
-				io:format("Left == undefined\n", []),
 				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined]),
         		binary_search_root ! {insert, ValueToInsert, true},
-				if
-					self() == RootPid ->
-						io:format("self() == binary_search_root: ~p\n", [self() == RootPid]),
-						binary_search(Value, NewNodePid, Right);
-					true ->
-						io:format("self() != binary_search_root\n", []),
-						actor_node(Value, NewNodePid, Right)
-				end;
+				actor_node(Value, NewNodePid, Right);
       		true -> 
          		Left ! {insert, ValueToInsert}
    			end;
@@ -91,12 +84,7 @@ insert(Value, Left, Right, ValueToInsert) ->
       		Right == undefined -> 
         		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined]),
         		binary_search_root ! {insert, ValueToInsert, true},
-				if
-					self() == RootPid ->
-						binary_search(Value, Left, NewNodePid);
-					true ->
-						actor_node(Value, Left, NewNodePid)
-				end;
+				actor_node(Value, Left, NewNodePid);
       		true -> 
          		Right ! {insert, ValueToInsert}
    			end
