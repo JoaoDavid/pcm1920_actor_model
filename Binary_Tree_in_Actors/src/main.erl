@@ -4,7 +4,7 @@
 %  c(main), main:main().
 -module(main).
 
--export([main/0,client/0,binary_search/0,insert/4,contains/4,client_handle_response/0]).
+-export([main/0,client/0,client_handle_response/0,binary_search/0,binary_search/1,actor_node/3,insert/4,contains/4]).
 
 
 main() ->
@@ -41,6 +41,7 @@ binary_search() ->
         {insert, ValueToInsert} ->
 			Root = spawn(main, actor_node, [ValueToInsert,undefined,undefined]),
 			client ! {insert,ValueToInsert,true},
+			io:format("Root pid: ~p\n", [Root]),
 			binary_search(Root);
 		{Op, Value} ->
 			client ! {Op,Value,false},
@@ -48,12 +49,16 @@ binary_search() ->
 	end.
 			
 binary_search(Root) ->
+	io:format("Entrei no binary_search root\n", []),
 	receive
         {insert, ValueToInsert} ->
+			io:format("API: insert ~p\n", [ValueToInsert]),
 			Root ! {insert, ValueToInsert};
 		{delete, ValueToDelete} ->
+			io:format("API: delete ~p\n", [ValueToDelete]),
 			Root ! {delete, ValueToDelete};
 		{contains, ValueToFind} ->
+			io:format("API: contains ~p\n", [ValueToFind]),
 			Root ! {contains, ValueToFind}
     end,
 	binary_search_handle_response(),
@@ -62,12 +67,12 @@ binary_search(Root) ->
 actor_node(Value, Left, Right) ->
 	receive
         {insert, ValueToInsert} ->
-            io:format("Insert: ~p\n", [ValueToInsert]),
+            io:format("Node Insert: ~p\n", [ValueToInsert]),
 			insert(Value, Left, Right, ValueToInsert);
 		{delete, ValueToDelete} ->
-            io:format("Delete: ~p\n", [ValueToDelete]);
+            io:format("Node Delete: ~p\n", [ValueToDelete]);
 		{contains, ValueToFind} ->
-			io:format("Contains: ~p\n", [ValueToFind]),
+			io:format("Node Contains: ~p\n", [ValueToFind]),
             contains(Value, Left, Right, ValueToFind)
     end.
 
