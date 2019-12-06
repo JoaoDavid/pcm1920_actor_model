@@ -4,15 +4,15 @@
 %  c(main), main:main().
 -module(main).
 
--export([main/0,client/1,binary_search/0,insert/4,contains/4,client_handle_response/0]).
+-export([main/0,client/0,binary_search/0,insert/4,contains/4,client_handle_response/0]).
 
 
 main() ->
-	register(binary_search_root, spawn(main, binary_search, [3,undefined,undefined])),
+	register(binary_search_root, spawn(main, binary_search, [])),
 	register(client, spawn(main, client, [3])).
 
 
-client(N) ->
+client() ->
 	io:format("Entering Client\n", []),
 	binary_search_root ! {contains,3},
 	client_handle_response(),
@@ -29,16 +29,22 @@ client_handle_response() ->
         {Op, Value, Response} ->
             io:format("Client Response: ~p ~p ~p\n", [Op, Value, Response])
     end.
-	
+
+binary_search_handle_response() -> 
+	receive
+		{Op, Value, Response} ->
+			client ! {Op,Value,Response}
+	end.
 
 binary_search() -> 
 	receive
         {insert, ValueToInsert} ->
 			Root = spawn(main, actor_node, [ValueToInsert,undefined,undefined]),
-			client ! {insert,ValueToInsert,true};
-			
+			client ! {insert,ValueToInsert,true},
+			binary_search(Root);
 		{Op, Value} ->
-			client ! {Op,Value,false}
+			client ! {Op,Value,false},
+			binary_search()
 	end.
 			
 binary_search(Root) ->
@@ -50,6 +56,7 @@ binary_search(Root) ->
 		{contains, ValueToFind} ->
 			Root ! {contains, ValueToFind}
     end,
+	binary_search_handle_response(),
 	binary_search(Root).
 
 actor_node(Value, Left, Right) ->
@@ -65,7 +72,6 @@ actor_node(Value, Left, Right) ->
     end.
 
 insert(Value, Left, Right, ValueToInsert) ->
-	RootPid = whereis(binary_search_root),
 	case ValueToInsert of 
      	Value ->
 			io:format("inside insert already exists: ~p\n", [ValueToInsert]),
@@ -77,7 +83,8 @@ insert(Value, Left, Right, ValueToInsert) ->
         		binary_search_root ! {insert, ValueToInsert, true},
 				actor_node(Value, NewNodePid, Right);
       		true -> 
-         		Left ! {insert, ValueToInsert}
+         		Left ! {insert, ValueToInsert},
+				actor_node(Value, Left, Right)
    			end;
 		N when N > Value ->
 			if 
@@ -86,7 +93,8 @@ insert(Value, Left, Right, ValueToInsert) ->
         		binary_search_root ! {insert, ValueToInsert, true},
 				actor_node(Value, Left, NewNodePid);
       		true -> 
-         		Right ! {insert, ValueToInsert}
+         		Right ! {insert, ValueToInsert},
+				actor_node(Value, Left, Right)
    			end
 	end.
 
