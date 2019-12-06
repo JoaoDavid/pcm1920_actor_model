@@ -8,19 +8,19 @@
 
 
 main() ->
-	register(binary_search_root, spawn(main, binary_search, [])),
+	register(binary_tree_api, spawn(main, binary_search, [])),
 	register(client, spawn(main, client, [3])).
 
 
 client() ->
 	io:format("Entering Client\n", []),
-	binary_search_root ! {contains,3},
+	binary_tree_api ! {contains,3},
 	client_handle_response(),
-	binary_search_root ! {contains,1},
+	binary_tree_api ! {contains,1},
 	client_handle_response(),
-	binary_search_root ! {insert,1},
+	binary_tree_api ! {insert,1},
 	client_handle_response(),
-	binary_search_root ! {contains,1},
+	binary_tree_api ! {contains,1},
 	client_handle_response().
 
 
@@ -75,12 +75,12 @@ insert(Value, Left, Right, ValueToInsert) ->
 	case ValueToInsert of 
      	Value ->
 			io:format("inside insert already exists: ~p\n", [ValueToInsert]),
-			binary_search_root ! {insert, ValueToInsert, already_exists};
+			binary_tree_api ! {insert, ValueToInsert, already_exists};
       	N when N < Value ->
 			if 
       		Left == undefined ->
 				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined]),
-        		binary_search_root ! {insert, ValueToInsert, true},
+        		binary_tree_api ! {insert, ValueToInsert, true},
 				actor_node(Value, NewNodePid, Right);
       		true -> 
          		Left ! {insert, ValueToInsert},
@@ -90,7 +90,7 @@ insert(Value, Left, Right, ValueToInsert) ->
 			if 
       		Right == undefined -> 
         		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined]),
-        		binary_search_root ! {insert, ValueToInsert, true},
+        		binary_tree_api ! {insert, ValueToInsert, true},
 				actor_node(Value, Left, NewNodePid);
       		true -> 
          		Right ! {insert, ValueToInsert},
@@ -102,18 +102,18 @@ contains(Value, Left, Right, ValueToFind) ->
 	case ValueToFind of 
      	Value ->
 			io:format("inside contains yes, contains: ~p\n", [ValueToFind]),
-			binary_search_root ! {contains, ValueToFind, true};
+			binary_tree_api ! {contains, ValueToFind, true};
       	N when N < Value ->
 			if 
       		Left == undefined -> 
-        		binary_search_root ! {contains, ValueToFind, false};  
+        		binary_tree_api ! {contains, ValueToFind, false};  
       		true -> 
          		Left ! {contains, ValueToFind}
    			end;
 		N when N > Value ->
 			if 
       		Right == undefined -> 
-        		binary_search_root ! {contains, ValueToFind, false};
+        		binary_tree_api ! {contains, ValueToFind, false};
       		true -> 
          		Right ! {contains, ValueToFind}
    			end
