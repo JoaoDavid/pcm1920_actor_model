@@ -9,7 +9,7 @@
 
 main() ->
 	register(binary_tree_api, spawn(main, binary_search, [])),
-	register(client, spawn(main, client, [3])).
+	register(client, spawn(main, client, [])).
 
 
 client() ->
