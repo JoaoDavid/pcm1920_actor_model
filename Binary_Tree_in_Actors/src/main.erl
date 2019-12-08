@@ -4,7 +4,7 @@
 %  c(main), main:start().
 -module(main).
 
--export([start/0,client/0,client_handle_response/0,binary_search/0,binary_search/1,actor_node/3,insert/4,contains/4, delete/5]).
+-export([start/0,client/0,client_handle_response/0,binary_search/0,binary_search/1,actor_node/4,insert/5,contains/5, delete/5]).
 
 
 start() ->
@@ -70,9 +70,8 @@ binary_search_handle_response() ->
 binary_search() -> 
 	receive
         {insert, ValueToInsert} ->
-			Root = spawn(main, actor_node, [ValueToInsert,undefined,undefined]),
+			Root = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self()]),
 			client ! {insert,ValueToInsert,true},
-			%io:format("Root pid: ~p\n", [Root]),
 			binary_search(Root);
 		{Op, Value} ->
 			client ! {Op,Value,false},
@@ -82,37 +81,33 @@ binary_search() ->
 binary_search(Root) ->
 	receive
         {insert, ValueToInsert} ->
-			%io:format("API: insert ~p\n", [ValueToInsert]),
 			Root ! {insert, ValueToInsert};
 		{delete, ValueToDelete} ->
-			%io:format("API: delete ~p\n", [ValueToDelete]),
 			Root ! {delete, ValueToDelete, self()};
 		{contains, ValueToFind} ->
-			%io:format("API: contains ~p\n", [ValueToFind]),
 			Root ! {contains, ValueToFind}
     end,
 	binary_search_handle_response(),
 	binary_search(Root).
 
-actor_node(Value, Left, Right) ->
-	%Father whose child died
+actor_node(Value, Left, Right, Father) ->
 	receive
         {insert, ValueToInsert} ->
-			insert(Value, Left, Right, ValueToInsert);
-		{delete, ValueToDelete, Father} ->
+			insert(Value, Left, Right, ValueToInsert, Father);
+		{delete, ValueToDelete} ->
 			delete(Value, Left, Right, ValueToDelete, Father);
 		{contains, ValueToFind} ->
-            contains(Value, Left, Right, ValueToFind);
-		{die, Father} ->			
-            Father ! {reinsert, Value};
-		{reinsert, ValueToReInserted} ->			
-            reinsert(Value, Left, Right, ValueToReInserted);
+            contains(Value, Left, Right, ValueToFind, Father);
+		{die, NewFather} ->			
+            NewFather ! {reinsert, Value};
+		{reinsert, ValueToReInsert} ->			
+            reinsert(Value, Left, Right, ValueToReInsert, Father);
 		{child_died, Pid} ->			
             if
 				Pid == Left ->
-					actor_node(Value, undefined, Right);
+					actor_node(Value, undefined, Right, Father);
 				true ->
-					actor_node(Value, Left, undefined)
+					actor_node(Value, Left, undefined, Father)
 			end
     end.
 
@@ -138,74 +133,74 @@ delete(Value, Left, Right, ValueToDelete, Father) ->
 			if 
       		Left == undefined ->
         		binary_tree_api ! {delete, ValueToDelete, does_not_exist},
-				actor_node(Value, Left, Right);
+				actor_node(Value, Left, Right, Father);
       		true -> 
-         		Left ! {delete, ValueToDelete, self()},
-				actor_node(Value, Left, Right)
+         		Left ! {delete, ValueToDelete},
+				actor_node(Value, Left, Right, Father)
    			end;
 		N when N > Value ->
 			if 
       		Right == undefined -> 
         		binary_tree_api ! {delete, ValueToDelete, does_not_exist},
-				actor_node(Value, Left, Right);
+				actor_node(Value, Left, Right, Father);
       		true -> 
          		Right ! {delete, ValueToDelete, self()},
-				actor_node(Value, Left, Right)
+				actor_node(Value, Left, Right, Father)
    			end
 	end.
 
-reinsert(Value, Left, Right, ValueToInsert) ->
+reinsert(Value, Left, Right, ValueToInsert, Father) ->
 	case ValueToInsert of 
      	Value ->
-			actor_node(Value, Left, Right);
+			actor_node(Value, Left, Right, Father);
       	N when N < Value ->
 			if 
       		Left == undefined ->
-				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined]),
-				actor_node(Value, NewNodePid, Right);
+				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self()]),
+				actor_node(Value, NewNodePid, Right, Father);
       		true -> 
          		Left ! {reinsert, ValueToInsert},
-				actor_node(Value, Left, Right)
+				actor_node(Value, Left, Right, Father)
    			end;
 		N when N > Value ->
 			if 
       		Right == undefined -> 
-        		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined]),
-				actor_node(Value, Left, NewNodePid);
+        		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self()]),
+				actor_node(Value, Left, NewNodePid, Father);
       		true -> 
          		Right ! {reinsert, ValueToInsert},
-				actor_node(Value, Left, Right)
+				actor_node(Value, Left, Right, Father)
    			end
 	end.
 
-insert(Value, Left, Right, ValueToInsert) ->
+insert(Value, Left, Right, ValueToInsert, Father) ->
 	case ValueToInsert of 
      	Value ->
 			binary_tree_api ! {insert, ValueToInsert, already_exists},
-			actor_node(Value, Left, Right);
+			actor_node(Value, Left, Right, Father);
       	N when N < Value ->
 			if 
       		Left == undefined ->
-				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined]),
+				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self()]),
         		binary_tree_api ! {insert, ValueToInsert, true},
-				actor_node(Value, NewNodePid, Right);
+				actor_node(Value, NewNodePid, Right, Father);
       		true -> 
          		Left ! {insert, ValueToInsert},
-				actor_node(Value, Left, Right)
+				actor_node(Value, Left, Right, Father)
    			end;
 		N when N > Value ->
 			if 
       		Right == undefined -> 
-        		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined]),
+        		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self()]),
         		binary_tree_api ! {insert, ValueToInsert, true},
-				actor_node(Value, Left, NewNodePid);
+				actor_node(Value, Left, NewNodePid, Father);
       		true -> 
          		Right ! {insert, ValueToInsert},
-				actor_node(Value, Left, Right)
+				actor_node(Value, Left, Right, Father)
    			end
 	end.
 
-contains(Value, Left, Right, ValueToFind) ->
+contains(Value, Left, Right, ValueToFind, Father) ->
 	case ValueToFind of 
      	Value ->
 			binary_tree_api ! {contains, ValueToFind, true};
@@ -224,6 +219,6 @@ contains(Value, Left, Right, ValueToFind) ->
          		Right ! {contains, ValueToFind}
    			end
 	end,
-	actor_node(Value, Left, Right).
+	actor_node(Value, Left, Right, Father).
 
 
