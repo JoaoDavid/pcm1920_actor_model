@@ -83,7 +83,7 @@ binary_search(Root) ->
         {insert, ValueToInsert} ->
 			Root ! {insert, ValueToInsert};
 		{delete, ValueToDelete} ->
-			Root ! {delete, ValueToDelete, self()};
+			Root ! {delete, ValueToDelete};
 		{contains, ValueToFind} ->
 			Root ! {contains, ValueToFind}
     end,
@@ -144,7 +144,7 @@ delete(Value, Left, Right, ValueToDelete, Father) ->
         		binary_tree_api ! {delete, ValueToDelete, does_not_exist},
 				actor_node(Value, Left, Right, Father);
       		true -> 
-         		Right ! {delete, ValueToDelete, self()},
+         		Right ! {delete, ValueToDelete},
 				actor_node(Value, Left, Right, Father)
    			end
 	end.
