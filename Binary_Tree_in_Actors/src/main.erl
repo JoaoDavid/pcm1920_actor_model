@@ -111,7 +111,7 @@ actor_node(Value, Left, Right, Father, State) ->
             if
 				Pid == Left ->
 					actor_node(Value, undefined, Right, Father, State);
-				true ->
+				Pid == Right ->
 					actor_node(Value, Left, undefined, Father, State)
 			end
     end.
@@ -131,7 +131,7 @@ delete(Value, Left, Right, ValueToDelete, Father, State) ->
 							binary_tree_api ! {delete, ValueToDelete, does_not_exist},
 							actor_node(Value, Left, Right, Father, State)
 					end;
-				true ->
+				PidInterface /= Father ->
 					Father ! {child_died, self()}
 			end,			
 			if
@@ -152,7 +152,7 @@ delete(Value, Left, Right, ValueToDelete, Father, State) ->
       		Left == undefined ->
         		binary_tree_api ! {delete, ValueToDelete, does_not_exist},
 				actor_node(Value, Left, Right, Father, State);
-      		true -> 
+      		Left /= undefined -> 
          		Left ! {delete, ValueToDelete},
 				actor_node(Value, Left, Right, Father, State)
    			end;
@@ -161,7 +161,7 @@ delete(Value, Left, Right, ValueToDelete, Father, State) ->
       		Right == undefined -> 
         		binary_tree_api ! {delete, ValueToDelete, does_not_exist},
 				actor_node(Value, Left, Right, Father, State);
-      		true -> 
+      		Right /= undefined -> 
          		Right ! {delete, ValueToDelete},
 				actor_node(Value, Left, Right, Father, State)
    			end
@@ -176,7 +176,7 @@ reinsert(Value, Left, Right, ValueToInsert, Father, State) ->
       		Left == undefined ->
 				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
 				actor_node(Value, NewNodePid, Right, Father, State);
-      		true -> 
+      		Left /= undefined -> 
          		Left ! {reinsert, ValueToInsert},
 				actor_node(Value, Left, Right, Father, State)
    			end;
@@ -185,7 +185,7 @@ reinsert(Value, Left, Right, ValueToInsert, Father, State) ->
       		Right == undefined -> 
         		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
 				actor_node(Value, Left, NewNodePid, Father, State);
-      		true -> 
+      		Right /= undefined -> 
          		Right ! {reinsert, ValueToInsert},
 				actor_node(Value, Left, Right, Father, State)
    			end
@@ -208,7 +208,7 @@ insert(Value, Left, Right, ValueToInsert, Father, State) ->
 				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
         		binary_tree_api ! {insert, ValueToInsert, true},
 				actor_node(Value, NewNodePid, Right, Father, State);
-      		true -> 
+      		Left /= undefined -> 
          		Left ! {insert, ValueToInsert},
 				actor_node(Value, Left, Right, Father, State)
    			end;
@@ -218,7 +218,7 @@ insert(Value, Left, Right, ValueToInsert, Father, State) ->
         		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
         		binary_tree_api ! {insert, ValueToInsert, true},
 				actor_node(Value, Left, NewNodePid, Father, State);
-      		true -> 
+      		Right /= undefined -> 
          		Right ! {insert, ValueToInsert},
 				actor_node(Value, Left, Right, Father, State)
    			end
@@ -232,14 +232,14 @@ contains(Value, Left, Right, ValueToFind, Father, State) ->
 			if 
       		Left == undefined -> 
         		binary_tree_api ! {contains, ValueToFind, false};  
-      		true -> 
+      		Left /= undefined -> 
          		Left ! {contains, ValueToFind}
    			end;
 		N when N > Value ->
 			if 
       		Right == undefined -> 
         		binary_tree_api ! {contains, ValueToFind, false};
-      		true -> 
+      		Right /= undefined -> 
          		Right ! {contains, ValueToFind}
    			end
 	end,
