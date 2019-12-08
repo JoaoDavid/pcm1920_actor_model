@@ -4,7 +4,7 @@
 %  c(main), main:start().
 -module(main).
 
--export([start/0,client/0,client_handle_response/0,binary_search/0,binary_search/1,actor_node/4,insert/5,contains/5, delete/5]).
+-export([start/0,client/0,client_handle_response/0,binary_search/0,binary_search/1,actor_node/5,insert/6,contains/6, delete/6]).
 
 
 start() ->
@@ -47,6 +47,11 @@ client() ->
 	binary_tree_api ! {contains,10},
 	binary_tree_api ! {contains,14},
 	
+	binary_tree_api ! {insert,8},
+	binary_tree_api ! {delete,8},
+	binary_tree_api ! {contains,8},
+	binary_tree_api ! {insert,8},
+	binary_tree_api ! {contains,8},
 	
 	
 	client_handle_response_forever().
@@ -70,7 +75,7 @@ binary_search_handle_response() ->
 binary_search() -> 
 	receive
         {insert, ValueToInsert} ->
-			Root = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self()]),
+			Root = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
 			client ! {insert,ValueToInsert,true},
 			binary_search(Root);
 		{Op, Value} ->
@@ -90,32 +95,45 @@ binary_search(Root) ->
 	binary_search_handle_response(),
 	binary_search(Root).
 
-actor_node(Value, Left, Right, Father) ->
+actor_node(Value, Left, Right, Father, State) ->
 	receive
         {insert, ValueToInsert} ->
-			insert(Value, Left, Right, ValueToInsert, Father);
+			insert(Value, Left, Right, ValueToInsert, Father, State);
 		{delete, ValueToDelete} ->
-			delete(Value, Left, Right, ValueToDelete, Father);
+			delete(Value, Left, Right, ValueToDelete, Father, State);
 		{contains, ValueToFind} ->
-            contains(Value, Left, Right, ValueToFind, Father);
+            contains(Value, Left, Right, ValueToFind, Father, State);
 		{die, NewFather} ->			
             NewFather ! {reinsert, Value};
 		{reinsert, ValueToReInsert} ->			
-            reinsert(Value, Left, Right, ValueToReInsert, Father);
+            reinsert(Value, Left, Right, ValueToReInsert, Father, State);
 		{child_died, Pid} ->			
             if
 				Pid == Left ->
-					actor_node(Value, undefined, Right, Father);
+					actor_node(Value, undefined, Right, Father, State);
 				true ->
-					actor_node(Value, Left, undefined, Father)
+					actor_node(Value, Left, undefined, Father, State)
 			end
     end.
 
 
-delete(Value, Left, Right, ValueToDelete, Father) ->
+delete(Value, Left, Right, ValueToDelete, Father, State) ->
+	PidInterface = whereis(binary_tree_api),
 	case ValueToDelete of 
      	Value ->
-			Father ! {child_died, self()},
+			if
+				PidInterface == Father ->
+					if
+						State == true ->							
+							binary_tree_api ! {delete, ValueToDelete, true},
+							actor_node(Value, Left, Right, Father, false);
+						State /= false ->
+							binary_tree_api ! {delete, ValueToDelete, does_not_exist},
+							actor_node(Value, Left, Right, Father, State)
+					end;
+				true ->
+					Father ! {child_died, self()}
+			end,			
 			if
 				Left /= undefined ->
 					Left ! {die, Father};
@@ -133,77 +151,83 @@ delete(Value, Left, Right, ValueToDelete, Father) ->
 			if 
       		Left == undefined ->
         		binary_tree_api ! {delete, ValueToDelete, does_not_exist},
-				actor_node(Value, Left, Right, Father);
+				actor_node(Value, Left, Right, Father, State);
       		true -> 
          		Left ! {delete, ValueToDelete},
-				actor_node(Value, Left, Right, Father)
+				actor_node(Value, Left, Right, Father, State)
    			end;
 		N when N > Value ->
 			if 
       		Right == undefined -> 
         		binary_tree_api ! {delete, ValueToDelete, does_not_exist},
-				actor_node(Value, Left, Right, Father);
+				actor_node(Value, Left, Right, Father, State);
       		true -> 
          		Right ! {delete, ValueToDelete},
-				actor_node(Value, Left, Right, Father)
+				actor_node(Value, Left, Right, Father, State)
    			end
 	end.
 
-reinsert(Value, Left, Right, ValueToInsert, Father) ->
+reinsert(Value, Left, Right, ValueToInsert, Father, State) ->
 	case ValueToInsert of 
      	Value ->
-			actor_node(Value, Left, Right, Father);
+			actor_node(Value, Left, Right, Father, State);
       	N when N < Value ->
 			if 
       		Left == undefined ->
-				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self()]),
-				actor_node(Value, NewNodePid, Right, Father);
+				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
+				actor_node(Value, NewNodePid, Right, Father, State);
       		true -> 
          		Left ! {reinsert, ValueToInsert},
-				actor_node(Value, Left, Right, Father)
+				actor_node(Value, Left, Right, Father, State)
    			end;
 		N when N > Value ->
 			if 
       		Right == undefined -> 
-        		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self()]),
-				actor_node(Value, Left, NewNodePid, Father);
+        		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
+				actor_node(Value, Left, NewNodePid, Father, State);
       		true -> 
          		Right ! {reinsert, ValueToInsert},
-				actor_node(Value, Left, Right, Father)
+				actor_node(Value, Left, Right, Father, State)
    			end
 	end.
 
-insert(Value, Left, Right, ValueToInsert, Father) ->
+insert(Value, Left, Right, ValueToInsert, Father, State) ->
 	case ValueToInsert of 
      	Value ->
-			binary_tree_api ! {insert, ValueToInsert, already_exists},
-			actor_node(Value, Left, Right, Father);
+			if
+				State == true ->							
+					binary_tree_api ! {insert, ValueToInsert, already_exists},
+					actor_node(Value, Left, Right, Father, State);
+				State == false ->
+					binary_tree_api ! {insert, ValueToInsert, true},
+					actor_node(Value, Left, Right, Father, true)
+			end;
       	N when N < Value ->
 			if 
       		Left == undefined ->
-				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self()]),
+				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
         		binary_tree_api ! {insert, ValueToInsert, true},
-				actor_node(Value, NewNodePid, Right, Father);
+				actor_node(Value, NewNodePid, Right, Father, State);
       		true -> 
          		Left ! {insert, ValueToInsert},
-				actor_node(Value, Left, Right, Father)
+				actor_node(Value, Left, Right, Father, State)
    			end;
 		N when N > Value ->
 			if 
       		Right == undefined -> 
-        		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self()]),
+        		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
         		binary_tree_api ! {insert, ValueToInsert, true},
-				actor_node(Value, Left, NewNodePid, Father);
+				actor_node(Value, Left, NewNodePid, Father, State);
       		true -> 
          		Right ! {insert, ValueToInsert},
-				actor_node(Value, Left, Right, Father)
+				actor_node(Value, Left, Right, Father, State)
    			end
 	end.
 
-contains(Value, Left, Right, ValueToFind, Father) ->
+contains(Value, Left, Right, ValueToFind, Father, State) ->
 	case ValueToFind of 
      	Value ->
-			binary_tree_api ! {contains, ValueToFind, true};
+			binary_tree_api ! {contains, ValueToFind, State};
       	N when N < Value ->
 			if 
       		Left == undefined -> 
@@ -219,6 +243,6 @@ contains(Value, Left, Right, ValueToFind, Father) ->
          		Right ! {contains, ValueToFind}
    			end
 	end,
-	actor_node(Value, Left, Right, Father).
+	actor_node(Value, Left, Right, Father, State).
 
 
