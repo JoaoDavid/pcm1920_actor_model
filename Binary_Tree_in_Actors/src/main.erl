@@ -4,7 +4,9 @@
 %  regs().
 -module(main).
 
--export([start/0,client_handle_response/0,binary_search/0,binary_search/1,actor_node/5,insert/6,contains/6, delete/6]).
+-export([start/0,binary_search/0,actor_node/5]).
+
+%----------------------------- CLIENT -----------------------------
 
 start() ->
 	register(binary_tree_interface, spawn(main, binary_search, [])),
@@ -53,8 +55,6 @@ start() ->
 	binary_tree_interface ! {destroy},
 	client_handle_response().
 	
-
-
 client_handle_response() ->
 	Timeout = 6000,
 	receive
@@ -68,6 +68,7 @@ client_handle_response() ->
       		io:format("Client ending after ~p miliseconds without new messages\n", [Timeout])
     end.
 
+%----------------------------- BINARY SEARCH TREE -----------------------------
 
 binary_search_handle_response() -> 
 	receive
@@ -108,6 +109,8 @@ binary_search(Root) ->
 			client ! {destroyed}					
     end.
 
+%----------------------------- ACTOR NODE -----------------------------
+
 actor_node(Value, Left, Right, Father, State) ->
 	receive
         {insert, ValueToInsert} ->
@@ -115,7 +118,8 @@ actor_node(Value, Left, Right, Father, State) ->
 		{delete, ValueToDelete} ->
 			delete(Value, Left, Right, ValueToDelete, Father, State);
 		{contains, ValueToFind} ->
-            contains(Value, Left, Right, ValueToFind, Father, State);
+            contains(Value, Left, Right, ValueToFind, State),
+			actor_node(Value, Left, Right, Father, State);
 		{reincarnate, NewFather} ->			
             NewFather ! {reinsert, Value};
 		{reinsert, ValueToReInsert} ->			
@@ -256,7 +260,7 @@ insert(Value, Left, Right, ValueToInsert, Father, State) ->
    			end
 	end.
 
-contains(Value, Left, Right, ValueToFind, Father, State) ->
+contains(Value, Left, Right, ValueToFind, State) ->
 	case ValueToFind of 
      	Value ->
 			binary_tree_interface ! {contains, ValueToFind, State};
@@ -274,5 +278,4 @@ contains(Value, Left, Right, ValueToFind, Father, State) ->
       		Right /= undefined -> 
          		Right ! {contains, ValueToFind}
    			end
-	end,
-	actor_node(Value, Left, Right, Father, State).
+	end.
