@@ -103,7 +103,7 @@ actor_node(Value, Left, Right, Father, State) ->
 			delete(Value, Left, Right, ValueToDelete, Father, State);
 		{contains, ValueToFind} ->
             contains(Value, Left, Right, ValueToFind, Father, State);
-		{die, NewFather} ->			
+		{reincarnate, NewFather} ->			
             NewFather ! {reinsert, Value};
 		{reinsert, ValueToReInsert} ->			
             reinsert(Value, Left, Right, ValueToReInsert, Father, State);
@@ -136,13 +136,13 @@ delete(Value, Left, Right, ValueToDelete, Father, State) ->
 			end,			
 			if
 				Left /= undefined ->
-					Left ! {die, Father};
+					Left ! {reincarnate, Father};
 				true ->
 					ok
 			end,
 			if
 				Right /= undefined ->
-					Right ! {die, Father};
+					Right ! {reincarnate, Father};
 				true ->
 					ok
 			end,			
