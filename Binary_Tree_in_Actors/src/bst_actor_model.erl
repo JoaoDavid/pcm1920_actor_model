@@ -70,12 +70,6 @@ client_handle_response() ->
 
 %----------------------------- BINARY SEARCH TREE -----------------------------
 
-binary_search_handle_response() -> 
-	receive
-		{Op, Value, Response} ->
-			client ! {Op,Value,Response}
-	end.
-
 binary_search() -> 
 	receive
         {insert, ValueToInsert} ->
@@ -92,17 +86,16 @@ binary_search() ->
 			
 binary_search(Root) ->
 	receive
+		{Op, Value, Response} ->
+			client ! {Op,Value,Response};
         {insert, ValueToInsert} ->
 			Root ! {insert, ValueToInsert},
-			binary_search_handle_response(),
 			binary_search(Root);
 		{delete, ValueToDelete} ->
 			Root ! {delete, ValueToDelete},
-			binary_search_handle_response(),
 			binary_search(Root);
 		{contains, ValueToFind} ->
 			Root ! {contains, ValueToFind},
-			binary_search_handle_response(),
 			binary_search(Root);
 		{destroy} ->
 			Root ! {destroy},
