@@ -1,6 +1,7 @@
 %% @author Joao David n49448
 
 %  c(main), main:start().
+%  regs().
 -module(main).
 
 -export([start/0,client/0,client_handle_response/0,binary_search/0,binary_search/1,actor_node/5,insert/6,contains/6, delete/6]).
@@ -52,7 +53,7 @@ client() ->
 	binary_tree_api ! {contains,8},
 	binary_tree_api ! {insert,8},
 	binary_tree_api ! {contains,8},
-	
+	%timer:sleep(3000),
 	binary_tree_api ! {destroy},
 	client_handle_response().
 	
@@ -63,7 +64,9 @@ client_handle_response() ->
 	receive
         {Op, Value, Response} ->
             io:format("Client Response: ~p ~p ~p\n", [Op, Value, Response]),
-			client_handle_response()
+			client_handle_response();
+		{destroyed} ->
+			io:format("Binary Search Tree destroyed\n", [])
 	after
     	Timeout ->
       		io:format("Client ending after ~p miliseconds without new messages\n", [Timeout])
@@ -80,10 +83,11 @@ binary_search() ->
 	receive
         {insert, ValueToInsert} ->
 			Root = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
+			register(list_to_atom("node"++integer_to_list(ValueToInsert)), Root),
 			client ! {insert,ValueToInsert,true},
 			binary_search(Root);
 		{destroy} ->
-			binary_search_destroyed;
+			client ! {destroyed};
 		{Op, Value} ->
 			client ! {Op,Value,does_not_exist},
 			binary_search()
@@ -104,7 +108,8 @@ binary_search(Root) ->
 			binary_search_handle_response(),
 			binary_search(Root);
 		{destroy} ->
-			Root ! {destroy}		
+			Root ! {destroy},
+			client ! {destroyed}					
     end.
 
 actor_node(Value, Left, Right, Father, State) ->
@@ -203,6 +208,7 @@ reinsert(Value, Left, Right, ValueToInsert, Father, State) ->
 			if 
       		Left == undefined ->
 				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
+				register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
 				actor_node(Value, NewNodePid, Right, Father, State);
       		Left /= undefined -> 
          		Left ! {reinsert, ValueToInsert},
@@ -212,6 +218,7 @@ reinsert(Value, Left, Right, ValueToInsert, Father, State) ->
 			if 
       		Right == undefined -> 
         		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
+				register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
 				actor_node(Value, Left, NewNodePid, Father, State);
       		Right /= undefined -> 
          		Right ! {reinsert, ValueToInsert},
@@ -234,6 +241,7 @@ insert(Value, Left, Right, ValueToInsert, Father, State) ->
 			if 
       		Left == undefined ->
 				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
+				register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
         		binary_tree_api ! {insert, ValueToInsert, true},
 				actor_node(Value, NewNodePid, Right, Father, State);
       		Left /= undefined -> 
@@ -244,6 +252,7 @@ insert(Value, Left, Right, ValueToInsert, Father, State) ->
 			if 
       		Right == undefined -> 
         		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
+				register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
         		binary_tree_api ! {insert, ValueToInsert, true},
 				actor_node(Value, Left, NewNodePid, Father, State);
       		Right /= undefined -> 
