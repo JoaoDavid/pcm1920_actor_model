@@ -9,7 +9,7 @@
 %----------------------------- CLIENT -----------------------------
 
 start() ->
-	register(binary_tree_interface, spawn(main, binary_search, [])),
+	register(binary_tree_interface, spawn(bst_actor_model, binary_search, [])),
 	register(client, self()),
 	
 	io:format("Client starting to send messages\n", []),
@@ -70,10 +70,16 @@ client_handle_response() ->
 
 %----------------------------- BINARY SEARCH TREE -----------------------------
 
+binary_search_handle_response() -> 
+	receive
+		{Op, Value, Response} ->
+			client ! {Op,Value,Response}
+	end.
+
 binary_search() -> 
 	receive
         {insert, ValueToInsert} ->
-			Root = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
+			Root = spawn(bst_actor_model, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
 			register(list_to_atom("node"++integer_to_list(ValueToInsert)), Root),
 			client ! {insert,ValueToInsert,true},
 			binary_search(Root);
@@ -86,16 +92,17 @@ binary_search() ->
 			
 binary_search(Root) ->
 	receive
-		{Op, Value, Response} ->
-			client ! {Op,Value,Response};
         {insert, ValueToInsert} ->
 			Root ! {insert, ValueToInsert},
+			binary_search_handle_response(),
 			binary_search(Root);
 		{delete, ValueToDelete} ->
 			Root ! {delete, ValueToDelete},
+			binary_search_handle_response(),
 			binary_search(Root);
 		{contains, ValueToFind} ->
 			Root ! {contains, ValueToFind},
+			binary_search_handle_response(),
 			binary_search(Root);
 		{destroy} ->
 			Root ! {destroy},
@@ -199,7 +206,7 @@ reinsert(Value, Left, Right, ValueToInsert, Father, State) ->
       	N when N < Value ->
 			if 
       		Left == undefined ->
-				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
+				NewNodePid = spawn(bst_actor_model, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
 				register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
 				actor_node(Value, NewNodePid, Right, Father, State);
       		Left /= undefined -> 
@@ -209,7 +216,7 @@ reinsert(Value, Left, Right, ValueToInsert, Father, State) ->
 		N when N > Value ->
 			if 
       		Right == undefined -> 
-        		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
+        		NewNodePid = spawn(bst_actor_model, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
 				register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
 				actor_node(Value, Left, NewNodePid, Father, State);
       		Right /= undefined -> 
@@ -232,7 +239,7 @@ insert(Value, Left, Right, ValueToInsert, Father, State) ->
       	N when N < Value ->
 			if 
       		Left == undefined ->
-				NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
+				NewNodePid = spawn(bst_actor_model, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
 				register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
         		binary_tree_interface ! {insert, ValueToInsert, true},
 				actor_node(Value, NewNodePid, Right, Father, State);
@@ -243,7 +250,7 @@ insert(Value, Left, Right, ValueToInsert, Father, State) ->
 		N when N > Value ->
 			if 
       		Right == undefined -> 
-        		NewNodePid = spawn(main, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
+        		NewNodePid = spawn(bst_actor_model, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
 				register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
         		binary_tree_interface ! {insert, ValueToInsert, true},
 				actor_node(Value, Left, NewNodePid, Father, State);
