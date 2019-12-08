@@ -1,8 +1,8 @@
 %% @author Joao David n49448
 
-%  c(main), main:start().
+%  c(bst_actor_model), bst_actor_model:start().
 %  regs().
--module(main).
+-module(bst_actor_model).
 
 -export([start/0,binary_search/0,actor_node/5]).
 
