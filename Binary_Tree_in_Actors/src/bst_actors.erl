@@ -9,7 +9,7 @@
 %% ====================================================================
 %% API functions
 %% ====================================================================
--export([start/0,bst/2]).
+-export([start/0,bst/2,tree_node/6]).
 
 
 
@@ -19,9 +19,20 @@
 
 start() ->
 	InterfaceNode = spawn(bst_actors, bst, [undefined,self()]),
-	client_send_random_ops(10,InterfaceNode),
+	%client_send_random_ops(10,InterfaceNode),
 	Messages = erlang:process_info(self(), messages),
-	io:format("Client Response: ~p\n", [Messages]),
+	io:format("Client Messages: ~p\n", [Messages]),	
+	InterfaceNode ! {contains,8},
+	InterfaceNode ! {delete,8},
+	InterfaceNode ! {insert,8},
+	InterfaceNode ! {contains,8},
+	InterfaceNode ! {insert,4},
+	InterfaceNode ! {insert,12},
+	%timer:sleep(3000),
+	InterfaceNode ! {contains,4},
+	InterfaceNode ! {contains,12},
+	Messages2 = erlang:process_info(self(), messages),
+	io:format("Client Messages: ~p\n", [Messages2]),	
 	client_handle_response(),
 
 	MessagesBst = erlang:process_info(InterfaceNode, messages),
@@ -56,48 +67,109 @@ client_handle_response() ->
       		io:format("Client ending after ~p miliseconds without new messages\n", [Timeout])
     end.
 
-bst_handle_response(ClientPid) -> 
-	receive
-		{client, Op, Value, Response} ->
-			ClientPid ! {Op,Value,Response}
-	end.
-
 bst(Root,ClientPid) ->
 	receive
+		{Op, Value, Response} ->
+			ClientPid ! {Op,Value,Response},
+			bst(Root,ClientPid);
         {insert, ValueToInsert} ->
 			if
 				Root == undefined ->
-					NewRoot = spawn(bst_actors, tree_node, [ValueToInsert,undefined,undefined,self(),true]),
-					self() ! {client, insert, ValueToInsert, true},
+					NewRoot = create_tree_node(ValueToInsert,self()),
+					self() ! {insert, ValueToInsert, true},
 					bst(NewRoot,ClientPid);
 				true ->
-					Root ! {insert, ValueToInsert}
-			end,
-			bst_handle_response(ClientPid),
-			bst(Root,ClientPid);
+					Root ! {insert, ValueToInsert},
+					bst(Root,ClientPid)
+			end;			
 		{contains, ValueToFind} ->
 			if
 				Root == undefined ->
-					self() ! {client, contains, ValueToFind, does_not_exist};
+					self() ! {contains, ValueToFind, does_not_exist};
 				true ->
 					Root ! {contains, ValueToFind}
 			end,
-			bst_handle_response(ClientPid),
 			bst(Root,ClientPid);
 		{delete, ValueToDelete} ->
 			if
 				Root == undefined ->
-					self() ! {client, contains, ValueToDelete, does_not_exist};
+					self() ! {delete, ValueToDelete, does_not_exist};
 				true ->
 					Root ! {delete, ValueToDelete}
 			end,
-			bst_handle_response(ClientPid),
 			bst(Root,ClientPid);	
 		{destroy} ->
 			Root ! {destroy},
 			self() ! {destroy, all, destroyed}
 	end.
 
-tree_node(Value,Left,Right,Father,Active) ->
-	io:format("tree_node: ~p ~p ~p ~p ~p\n", [Value,Left,Right,Father,Active]),
-	tree_node(Value,Left,Right,Father,Active).
+create_tree_node(Value,InterfaceNode) ->
+	spawn(bst_actors, tree_node, [Value,undefined,undefined,self(),true,InterfaceNode]).
+
+tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
+	receive
+    	{insert, ValueToInsert} ->
+			{L, R, IsA} = insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert),
+			tree_node(Value,L,R,Father,IsA,InterfaceNode);
+		{contains, ValueToFind} ->
+            contains(Value, Left, Right, IsActive, InterfaceNode, ValueToFind),
+			tree_node(Value,Left,Right,Father,IsActive,InterfaceNode)
+	%	{delete, ValueToDelete} ->
+	%		delete(Value, Left, Right, ValueToDelete, Father, State);		
+	%	{die} ->
+	%		actor_node_destroy(Left, Right)
+    end.
+
+
+insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert) ->
+	case ValueToInsert of 
+     	Value ->
+			if
+			IsActive ->							
+				InterfaceNode ! {insert, ValueToInsert, already_exists},
+				{Left, Right, IsActive};
+			true ->
+				InterfaceNode ! {insert, ValueToInsert, true},
+				{Left, Right, true}
+			end;
+      	N when N < Value ->
+			if 
+      		Left == undefined ->
+				NewNodePid = create_tree_node(ValueToInsert, InterfaceNode),
+        		InterfaceNode ! {insert, ValueToInsert, true},
+				{NewNodePid, Right, IsActive};
+      		Left /= undefined -> 
+         		Left ! {insert, ValueToInsert},
+				{Left, Right, IsActive}
+   			end;
+		N when N > Value ->
+			if 
+      		Right == undefined -> 
+        		NewNodePid = create_tree_node(ValueToInsert, InterfaceNode),
+        		InterfaceNode ! {insert, ValueToInsert, true},
+				{Left, NewNodePid, IsActive};
+      		Right /= undefined -> 
+         		Right ! {insert, ValueToInsert},
+				{Left, Right, IsActive}
+   			end
+	end.
+
+contains(Value, Left, Right, IsActive, InterfaceNode, ValueToFind) ->
+	case ValueToFind of 
+     	Value ->
+			InterfaceNode ! {contains, ValueToFind, IsActive};
+      	N when N < Value ->
+			if 
+      		Left == undefined -> 
+        		InterfaceNode ! {contains, ValueToFind, false};  
+      		Left /= undefined -> 
+         		Left ! {contains, ValueToFind}
+   			end;
+		N when N > Value ->
+			if 
+      		Right == undefined -> 
+        		InterfaceNode ! {contains, ValueToFind, false};
+      		Right /= undefined -> 
+         		Right ! {contains, ValueToFind}
+   			end
+	end.
