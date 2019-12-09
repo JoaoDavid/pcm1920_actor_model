@@ -112,16 +112,24 @@ bst(Root,ClientPid) ->
 					Root ! {delete, ValueToDelete}
 			end,
 			bst(Root,ClientPid);	
-		{destroy} ->
-			Root ! {die},
-			self() ! {die},
-			bst(Root,ClientPid);
-		{die} ->
-			ClientPid ! {destroy,destroy,true}
+		{garbage_collection} ->
+			Root ! {garbage_collection},
+			NewRoot = garbage_collection(Root,undefined),
+			bst(NewRoot,ClientPid)
 	end.
 
 create_tree_node(Value,InterfaceNode) ->
 	spawn(bst_actors, tree_node, [Value,undefined,undefined,self(),true,InterfaceNode]).
+
+gc_tree_node(Value,Left,Right,IsActive,InterfaceNode) ->
+	if
+		IsActive ->							
+			InterfaceNode ! {reincarnate, Value};
+		true ->
+			collect_garbage
+	end,
+	Left ! {garbage_collection},
+	Right ! {garbage_collection}.
 
 tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 	receive
@@ -134,8 +142,11 @@ tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 		{delete, ValueToDelete} ->
 			{L, R, IsA} = delete(Value, Left, Right, IsActive, InterfaceNode, ValueToDelete),
 			tree_node(Value,L,R,Father,IsA,InterfaceNode);
+		{garbage_collection} ->
+			gc_tree_node(Value,Left,Right,IsActive,InterfaceNode);
 		{die} ->
-			die(Left, Right)
+			Left ! die,
+			Right ! die
     end.
 
 
@@ -236,3 +247,19 @@ die(Left, Right) ->
       	Right /= undefined -> 
          	Right ! {die}
    	end.
+
+garbage_collection(OldRoot,Root) ->
+	receive
+        {reincarnate, ValueToInsert} ->
+			if
+				Root == undefined ->
+					NewRoot = create_tree_node(ValueToInsert,self()),
+					garbage_collection(OldRoot,NewRoot);
+				true ->
+					Root ! {insert, ValueToInsert},
+					garbage_collection(OldRoot,Root)
+			end
+	after
+    	2000 ->
+      		Root
+    end.
