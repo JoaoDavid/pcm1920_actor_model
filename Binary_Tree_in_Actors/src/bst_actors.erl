@@ -18,6 +18,7 @@
 %% ====================================================================
 
 start() ->
+	StartPids = erlang:processes(),
 	InterfaceNode = spawn(bst_actors, bst, [undefined,self()]),
 	%client_send_random_ops(10,InterfaceNode),
 	Messages = erlang:process_info(self(), messages),
@@ -28,8 +29,11 @@ start() ->
 	InterfaceNode ! {insert,12},
 	InterfaceNode ! {insert,2},
 	InterfaceNode ! {insert,14},
+	InterfaceNode ! {delete,8},
+	InterfaceNode ! {delete,4},
 	InterfaceNode ! {delete,12},
 	InterfaceNode ! {delete,2},
+	InterfaceNode ! {delete,14},
 	InterfaceNode ! {garbage_collection},
 	InterfaceNode ! {contains,8},
 	InterfaceNode ! {contains,4},
@@ -42,7 +46,10 @@ start() ->
 	client_handle_response(),
 
 	MessagesBst = erlang:process_info(InterfaceNode, messages),
-	io:format("Messages in bst: ~p\n", [MessagesBst]).
+	io:format("Messages in bst: ~p\n", [MessagesBst]),
+	EndPids = erlang:processes(),
+	io:format("~p StartPids: ~p\n", [length(StartPids),StartPids]),
+	io:format("~p EndPids: ~p\n", [length(EndPids),EndPids]).
 	
 client_send_random_ops(Iteration,InterfaceNode) ->
 	%OpNumber = rand:uniform(3),
@@ -91,7 +98,7 @@ bst(Root,ClientPid) ->
 		{contains, ValueToFind} ->
 			if
 				Root == undefined ->
-					self() ! {contains, ValueToFind, does_not_exist};
+					self() ! {contains, ValueToFind, false};
 				true ->
 					Root ! {contains, ValueToFind}
 			end,
@@ -111,7 +118,9 @@ bst(Root,ClientPid) ->
 	end.
 
 create_tree_node(Value,InterfaceNode) ->
-	spawn(bst_actors, tree_node, [Value,undefined,undefined,self(),true,InterfaceNode]).
+	Pid = spawn(bst_actors, tree_node, [Value,undefined,undefined,self(),true,InterfaceNode]),
+	%register(list_to_atom("node"++integer_to_list(Value)), Pid).
+	Pid.
 
 gc_tree_node(Value,Left,Right,IsActive,InterfaceNode) ->
 	if
