@@ -22,28 +22,20 @@ start() ->
 	%client_send_random_ops(10,InterfaceNode),
 	Messages = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages]),	
-	InterfaceNode ! {contains,8},
-	InterfaceNode ! {delete,8},
+
 	InterfaceNode ! {insert,8},
-	InterfaceNode ! {contains,8},
 	InterfaceNode ! {insert,4},
 	InterfaceNode ! {insert,12},
-	%timer:sleep(3000),
-	InterfaceNode ! {contains,4},
-	InterfaceNode ! {contains,12},
-	InterfaceNode ! {delete,4},
+	InterfaceNode ! {insert,2},
+	InterfaceNode ! {insert,14},
 	InterfaceNode ! {delete,12},
-	InterfaceNode ! {contains,4},
-	InterfaceNode ! {contains,12},
-	InterfaceNode ! {delete,8},
+	InterfaceNode ! {delete,2},
+	InterfaceNode ! {garbage_collection},
 	InterfaceNode ! {contains,8},
 	InterfaceNode ! {contains,4},
 	InterfaceNode ! {contains,12},
-	InterfaceNode ! {insert,4},
-	InterfaceNode ! {insert,12},
-	InterfaceNode ! {contains,4},
-	InterfaceNode ! {contains,12},
-	InterfaceNode ! {destroy},
+	InterfaceNode ! {contains,2},
+	InterfaceNode ! {contains,14},
 	
 	Messages2 = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages2]),	
@@ -128,8 +120,18 @@ gc_tree_node(Value,Left,Right,IsActive,InterfaceNode) ->
 		true ->
 			collect_garbage
 	end,
-	Left ! {garbage_collection},
-	Right ! {garbage_collection}.
+	if 
+      	Left == undefined ->
+			no_left_child;
+      	Left /= undefined -> 
+         	Left ! {garbage_collection}
+   	end,
+	if 
+      	Right == undefined ->
+			no_right_child;
+      	Right /= undefined -> 
+         	Right ! {garbage_collection}
+   	end.
 
 tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 	receive
@@ -146,6 +148,7 @@ tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 			gc_tree_node(Value,Left,Right,IsActive,InterfaceNode);
 		{die} ->
 			Left ! die,
+			%TODO check if different than undefined
 			Right ! die
     end.
 
