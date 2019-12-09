@@ -31,6 +31,20 @@ start() ->
 	%timer:sleep(3000),
 	InterfaceNode ! {contains,4},
 	InterfaceNode ! {contains,12},
+	InterfaceNode ! {delete,4},
+	InterfaceNode ! {delete,12},
+	InterfaceNode ! {contains,4},
+	InterfaceNode ! {contains,12},
+	InterfaceNode ! {delete,8},
+	InterfaceNode ! {contains,8},
+	InterfaceNode ! {contains,4},
+	InterfaceNode ! {contains,12},
+	InterfaceNode ! {insert,4},
+	InterfaceNode ! {insert,12},
+	InterfaceNode ! {contains,4},
+	InterfaceNode ! {contains,12},
+	InterfaceNode ! {destroy},
+	
 	Messages2 = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages2]),	
 	client_handle_response(),
@@ -99,8 +113,11 @@ bst(Root,ClientPid) ->
 			end,
 			bst(Root,ClientPid);	
 		{destroy} ->
-			Root ! {destroy},
-			self() ! {destroy, all, destroyed}
+			Root ! {die},
+			self() ! {die},
+			bst(Root,ClientPid);
+		{die} ->
+			ClientPid ! {destroy,destroy,true}
 	end.
 
 create_tree_node(Value,InterfaceNode) ->
@@ -113,11 +130,12 @@ tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 			tree_node(Value,L,R,Father,IsA,InterfaceNode);
 		{contains, ValueToFind} ->
             contains(Value, Left, Right, IsActive, InterfaceNode, ValueToFind),
-			tree_node(Value,Left,Right,Father,IsActive,InterfaceNode)
-	%	{delete, ValueToDelete} ->
-	%		delete(Value, Left, Right, ValueToDelete, Father, State);		
-	%	{die} ->
-	%		actor_node_destroy(Left, Right)
+			tree_node(Value,Left,Right,Father,IsActive,InterfaceNode);
+		{delete, ValueToDelete} ->
+			{L, R, IsA} = delete(Value, Left, Right, IsActive, InterfaceNode, ValueToDelete),
+			tree_node(Value,L,R,Father,IsA,InterfaceNode);
+		{die} ->
+			die(Left, Right)
     end.
 
 
@@ -173,3 +191,48 @@ contains(Value, Left, Right, IsActive, InterfaceNode, ValueToFind) ->
          		Right ! {contains, ValueToFind}
    			end
 	end.
+
+delete(Value, Left, Right, IsActive, InterfaceNode, ValueToDelete) ->
+	case ValueToDelete of 
+     	Value ->
+			if
+			IsActive ->							
+				InterfaceNode ! {delete, ValueToDelete, true},
+				{Left, Right, false};
+			true ->
+				InterfaceNode ! {delete, ValueToDelete, does_not_exist},
+				{Left, Right, IsActive}
+			end;
+      	N when N < Value ->
+			if 
+      		Left == undefined ->
+				InterfaceNode ! {delete, ValueToDelete, does_not_exist},
+				{Left, Right, IsActive};
+      		Left /= undefined -> 
+         		Left ! {delete, ValueToDelete},
+				{Left, Right, IsActive}
+   			end;
+		N when N > Value ->
+			if 
+      		Right == undefined -> 
+        		InterfaceNode ! {delete, ValueToDelete, does_not_exist},
+				{Left, Right, IsActive};
+      		Right /= undefined -> 
+         		Right ! {delete, ValueToDelete},
+				{Left, Right, IsActive}
+   			end
+	end.
+
+die(Left, Right) ->
+	if 
+    	Left == undefined ->
+			no_left_child;
+      	Left /= undefined -> 
+         	Left ! {die}
+   	end,
+	if 
+    	Right == undefined ->
+			no_left_child;
+      	Right /= undefined -> 
+         	Right ! {die}
+   	end.
