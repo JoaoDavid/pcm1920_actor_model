@@ -10,50 +10,28 @@
 
 start() ->
 	register(bst_node, spawn(bst_actor_model, binary_search_tree, [])),
-	register(client_node, self()),
-	
+	register(client_node, self()),	
 	io:format("Client starting to send messages\n", []),
-	bst_node ! {insert,8},
-	bst_node ! {insert,4},
-	bst_node ! {insert,12},
-	bst_node ! {contains,8},
-	bst_node ! {contains,4},
-	bst_node ! {contains,12},
-
-	bst_node ! {insert,2},
-	bst_node ! {insert,6},
-	bst_node ! {insert,10},
-	bst_node ! {insert,14},
-
-	bst_node ! {contains,8},
-	bst_node ! {contains,4},
-	bst_node ! {contains,12},
-	bst_node ! {contains,2},
-	bst_node ! {contains,6},
-	bst_node ! {contains,10},
-	bst_node ! {contains,14},
-
-	bst_node ! {delete,4},
-	bst_node ! {insert,5},
-	bst_node ! {contains,5},
-	bst_node ! {contains,6},
-	bst_node ! {contains,4},
-	bst_node ! {contains,2},
-
-	bst_node ! {delete,10},
-	bst_node ! {insert,10},
-	bst_node ! {contains,13},
-	bst_node ! {contains,10},
-	bst_node ! {contains,14},
-	
-	bst_node ! {insert,8},
-	bst_node ! {delete,8},
-	bst_node ! {contains,8},
-	bst_node ! {insert,8},
-	bst_node ! {contains,8},
-	%timer:sleep(3000),
+	client_send_random_ops(1000),
 	bst_node ! {destroy},
 	client_handle_response().
+
+client_send_random_ops(Iteration) ->
+	OpNumber = rand:uniform(3),
+	Value = rand:uniform(1000),
+	case OpNumber of 
+     	1 -> bst_node ! {insert,Value};
+		2 -> bst_node ! {contains,Value};
+		3 -> bst_node ! {delete,Value}
+	end,
+	if
+		Iteration > 0 ->
+		  client_send_random_ops(Iteration - 1);
+		true ->
+			done
+	end.
+
+			
 	
 client_handle_response() ->
 	Timeout = 6000,
@@ -207,7 +185,7 @@ reinsert(Value, Left, Right, ValueToInsert, Father, State) ->
 			if 
       		Left == undefined ->
 				NewNodePid = spawn(bst_actor_model, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
-				register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
+				%register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
 				actor_node(Value, NewNodePid, Right, Father, State);
       		Left /= undefined -> 
          		Left ! {reinsert, ValueToInsert},
@@ -217,7 +195,7 @@ reinsert(Value, Left, Right, ValueToInsert, Father, State) ->
 			if 
       		Right == undefined -> 
         		NewNodePid = spawn(bst_actor_model, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
-				register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
+				%register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
 				actor_node(Value, Left, NewNodePid, Father, State);
       		Right /= undefined -> 
          		Right ! {reinsert, ValueToInsert},
@@ -240,7 +218,7 @@ insert(Value, Left, Right, ValueToInsert, Father, State) ->
 			if 
       		Left == undefined ->
 				NewNodePid = spawn(bst_actor_model, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
-				register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
+				%register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
         		bst_node ! {insert, ValueToInsert, true},
 				actor_node(Value, NewNodePid, Right, Father, State);
       		Left /= undefined -> 
@@ -251,7 +229,7 @@ insert(Value, Left, Right, ValueToInsert, Father, State) ->
 			if 
       		Right == undefined -> 
         		NewNodePid = spawn(bst_actor_model, actor_node, [ValueToInsert,undefined,undefined,self(),true]),
-				register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
+				%register(list_to_atom("node"++integer_to_list(ValueToInsert)), NewNodePid),
         		bst_node ! {insert, ValueToInsert, true},
 				actor_node(Value, Left, NewNodePid, Father, State);
       		Right /= undefined -> 
