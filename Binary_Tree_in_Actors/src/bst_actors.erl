@@ -1,4 +1,4 @@
-%% @author PC
+%% @author Joao David n49448
 %% @doc @todo Add description to bst_actors.
 
 %  c(bst_actors), bst_actors:start().
@@ -9,7 +9,7 @@
 %% ====================================================================
 %% API functions
 %% ====================================================================
--export([start/0,bst/2,tree_node/6]).
+-export([start/0,bst/3,tree_node/6]).
 
 
 
@@ -17,33 +17,19 @@
 %% Internal functions
 %% ====================================================================
 
+%This constant sets the maximum number of tree actors that had their
+%value deleted, but are still alive
+-define(MAX_GARBAGE_NODES, 100).
+
 start() ->
 	StartPids = erlang:processes(),
-	InterfaceNode = spawn(bst_actors, bst, [undefined,self()]),
-	%client_send_random_ops(10,InterfaceNode),
+	InterfaceNode = spawn(bst_actors, bst, [undefined,self(),0]),
+	client_send_random_ops(101,InterfaceNode),
+	client_send_delete_ops(101,InterfaceNode),
+	%InterfaceNode ! {garbage_collection},
 	Messages = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages]),	
 
-	InterfaceNode ! {insert,8},
-	InterfaceNode ! {insert,4},
-	InterfaceNode ! {insert,12},
-	InterfaceNode ! {insert,2},
-	InterfaceNode ! {insert,14},
-	InterfaceNode ! {delete,8},
-	InterfaceNode ! {delete,4},
-	InterfaceNode ! {delete,12},
-	InterfaceNode ! {garbage_collection},
-	InterfaceNode ! {insert,6},
-	InterfaceNode ! {insert,10},
-	InterfaceNode ! {contains,6},
-	InterfaceNode ! {contains,10},
-	InterfaceNode ! {contains,8},
-	InterfaceNode ! {contains,4},
-	InterfaceNode ! {contains,12},
-	InterfaceNode ! {contains,2},
-	InterfaceNode ! {contains,14},
-	timer:sleep(10000),
-	InterfaceNode ! {die},
 	
 	Messages2 = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages2]),	
@@ -54,18 +40,28 @@ start() ->
 	EndPids = erlang:processes(),
 	io:format("~p StartPids: ~p\n", [length(StartPids),StartPids]),
 	io:format("~p EndPids: ~p\n", [length(EndPids),EndPids]).
+
+client_send_delete_ops(Iteration,InterfaceNode) ->
+	if
+		Iteration > 0 ->
+			InterfaceNode ! {delete,Iteration},
+			client_send_delete_ops(Iteration-1,InterfaceNode);
+		true ->
+			done
+	end.
 	
+
 client_send_random_ops(Iteration,InterfaceNode) ->
 	%OpNumber = rand:uniform(3),
 	OpNumber = 1,
 	Value = rand:uniform(99),
 	case OpNumber of 
-     	1 -> InterfaceNode ! {insert,Value};
+     	1 -> InterfaceNode ! {insert,Iteration};
 		2 -> InterfaceNode ! {contains,Value};
 		3 -> InterfaceNode ! {delete,Value}
 	end,
 	if
-		Iteration > 0 ->
+		Iteration > 1 ->
 		  client_send_random_ops(Iteration - 1,InterfaceNode);
 		true ->
 			done
@@ -84,20 +80,31 @@ client_handle_response() ->
       		io:format("Client ending after ~p miliseconds without new messages\n", [Timeout])
     end.
 
-bst(Root,ClientPid) ->
+bst(Root,ClientPid,NumDeletes) ->
 	receive
 		{Op, Value, Response} ->
 			ClientPid ! {Op,Value,Response},
-			bst(Root,ClientPid);
+			if
+				(Op == delete) and (Response == true) ->
+					if
+						NumDeletes + 1 >= ?MAX_GARBAGE_NODES ->
+							self() ! {garbage_collection};
+						true ->
+							garbage_not_full
+					end,
+					bst(Root,ClientPid,NumDeletes + 1);
+				true ->
+					bst(Root,ClientPid,NumDeletes)
+			end;			
         {insert, ValueToInsert} ->
 			if
 				Root == undefined ->
 					NewRoot = create_tree_node(ValueToInsert,self()),
 					self() ! {insert, ValueToInsert, true},
-					bst(NewRoot,ClientPid);
+					bst(NewRoot,ClientPid,NumDeletes);
 				true ->
 					Root ! {insert, ValueToInsert},
-					bst(Root,ClientPid)
+					bst(Root,ClientPid,NumDeletes)
 			end;			
 		{contains, ValueToFind} ->
 			if
@@ -106,7 +113,7 @@ bst(Root,ClientPid) ->
 				true ->
 					Root ! {contains, ValueToFind}
 			end,
-			bst(Root,ClientPid);
+			bst(Root,ClientPid,NumDeletes);
 		{delete, ValueToDelete} ->
 			if
 				Root == undefined ->
@@ -114,11 +121,11 @@ bst(Root,ClientPid) ->
 				true ->
 					Root ! {delete, ValueToDelete}
 			end,
-			bst(Root,ClientPid);	
+			bst(Root,ClientPid,NumDeletes);	
 		{garbage_collection} ->
 			Root ! {garbage_collection},
 			NewRoot = garbage_collection(Root,undefined),
-			bst(NewRoot,ClientPid);
+			bst(NewRoot,ClientPid,0);
 		{die} ->
 			if
 				Root == undefined ->
@@ -295,6 +302,6 @@ garbage_collection(OldRoot,Root) ->
 					garbage_collection(OldRoot,Root)
 			end
 	after
-    	2000 ->
+    	10000 ->
       		Root
     end.
