@@ -25,7 +25,7 @@ start() ->
 	StartPids = erlang:processes(),
 	InterfaceNode = spawn(bst_actors, bst, [undefined,self(),0]),
 	client_send_random_ops(101,InterfaceNode),
-	client_send_delete_ops(101,InterfaceNode),
+	client_send_delete_ops(100,InterfaceNode),
 	%InterfaceNode ! {garbage_collection},
 	Messages = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages]),	
@@ -42,9 +42,9 @@ start() ->
 	io:format("~p EndPids: ~p\n", [length(EndPids),EndPids]).
 
 client_send_delete_ops(Iteration,InterfaceNode) ->
+	InterfaceNode ! {delete,Iteration},
 	if
-		Iteration > 0 ->
-			InterfaceNode ! {delete,Iteration},
+		Iteration > 1 ->
 			client_send_delete_ops(Iteration-1,InterfaceNode);
 		true ->
 			done
@@ -81,17 +81,19 @@ client_handle_response() ->
     end.
 
 bst(Root,ClientPid,NumDeletes) ->
+	if
+		NumDeletes + 1 >= ?MAX_GARBAGE_NODES ->
+			Root ! {garbage_collection},
+			IAmRoot = garbage_collection(Root,undefined),
+			bst(IAmRoot,ClientPid,0);
+		true ->
+			garbage_not_full
+	end,
 	receive
 		{Op, Value, Response} ->
 			ClientPid ! {Op,Value,Response},
 			if
-				(Op == delete) and (Response == true) ->
-					if
-						NumDeletes + 1 >= ?MAX_GARBAGE_NODES ->
-							self() ! {garbage_collection};
-						true ->
-							garbage_not_full
-					end,
+				(Op == delete) and (Response == true) ->					
 					bst(Root,ClientPid,NumDeletes + 1);
 				true ->
 					bst(Root,ClientPid,NumDeletes)
@@ -302,6 +304,6 @@ garbage_collection(OldRoot,Root) ->
 					garbage_collection(OldRoot,Root)
 			end
 	after
-    	10000 ->
+    	11000 ->
       		Root
     end.
