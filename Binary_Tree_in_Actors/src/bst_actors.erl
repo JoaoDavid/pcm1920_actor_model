@@ -87,26 +87,23 @@ client_handle_response(Counter) ->
 
 bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 	receive
-		{Op, Value, Response, Seq} ->
-			if
-				Seq == SentSeq ->
-					ClientPid ! {Op,Value,Response},
-					if
-						(Op == delete) and (Response == true) ->
-							if
-								NumDeletes + 1 >= ?MAX_GARBAGE_NODES ->
-									self() ! {garbage_collection};
-								true ->
-									garbage_not_full
-							end,
-							bst(Root,ClientPid,NumDeletes + 1,RecSeq,SentSeq+1);
-						true ->
-							bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq+1)
-					end;
-			true ->
-				self() ! {Op, Value, Response, Seq},
-				bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq)
-			end;
+		{Op, Value, Response, Seq} when Seq == SentSeq ->
+			ClientPid ! {Op,Value,Response},
+				if
+					(Op == delete) and (Response == true) ->
+						if
+							NumDeletes + 1 >= ?MAX_GARBAGE_NODES ->
+								self() ! {garbage_collection};
+							true ->
+								garbage_not_full
+						end,
+						bst(Root,ClientPid,NumDeletes + 1,RecSeq,SentSeq+1);
+				true ->
+					bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq+1)
+				end;
+		{Op, Value, Response, Seq} when Seq /= SentSeq ->
+			self() ! {Op, Value, Response, Seq},
+			bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq);
         {insert, ValueToInsert} ->
 			if
 				Root == undefined ->
