@@ -24,8 +24,9 @@
 start() ->
 	StartPids = erlang:processes(),
 	InterfaceNode = spawn(bst_actors, bst, [undefined,self(),0]),
-	client_send_random_ops(101,InterfaceNode),
-	client_send_delete_ops(100,InterfaceNode),
+	%client_send_random_ops(101,InterfaceNode),
+	client_send_insert_ops(1000,InterfaceNode),
+	client_send_delete_ops(1000,InterfaceNode),
 	%InterfaceNode ! {garbage_collection},
 	Messages = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages]),	
@@ -33,7 +34,7 @@ start() ->
 	
 	Messages2 = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages2]),	
-	client_handle_response(),
+	client_handle_response(0),
 
 	MessagesBst = erlang:process_info(InterfaceNode, messages),
 	io:format("Messages in bst: ~p\n", [MessagesBst]),
@@ -46,6 +47,15 @@ client_send_delete_ops(Iteration,InterfaceNode) ->
 	if
 		Iteration > 1 ->
 			client_send_delete_ops(Iteration-1,InterfaceNode);
+		true ->
+			done
+	end.
+
+client_send_insert_ops(Iteration,InterfaceNode) ->
+	InterfaceNode ! {insert,Iteration},
+	if
+		Iteration > 1 ->
+			client_send_insert_ops(Iteration-1,InterfaceNode);
 		true ->
 			done
 	end.
@@ -67,33 +77,32 @@ client_send_random_ops(Iteration,InterfaceNode) ->
 			done
 	end.
 
-client_handle_response() ->
-	Timeout = 6000,
+client_handle_response(Counter) ->
+	Timeout = 0,
 	receive
         {Op, Value, Response} ->
             io:format("Client Response: ~p ~p ~p\n", [Op, Value, Response]),
-			client_handle_response();
+			client_handle_response(Counter + 1);
 		{destroyed} ->
 			io:format("Binary Search Tree destroyed\n", [])
 	after
     	Timeout ->
-      		io:format("Client ending after ~p miliseconds without new messages\n", [Timeout])
+      		io:format("Client ending after ~p miliseconds without new messages\n", [Timeout]),
+			io:format("N msgs: ~p\n", [Counter])
     end.
 
 bst(Root,ClientPid,NumDeletes) ->
-	if
-		NumDeletes + 1 >= ?MAX_GARBAGE_NODES ->
-			Root ! {garbage_collection},
-			IAmRoot = garbage_collection(Root,undefined),
-			bst(IAmRoot,ClientPid,0);
-		true ->
-			garbage_not_full
-	end,
 	receive
 		{Op, Value, Response} ->
 			ClientPid ! {Op,Value,Response},
 			if
-				(Op == delete) and (Response == true) ->					
+				(Op == delete) and (Response == true) ->
+					if
+						NumDeletes + 1 >= ?MAX_GARBAGE_NODES ->
+							self() ! {garbage_collection};
+						true ->
+							garbage_not_full
+					end,
 					bst(Root,ClientPid,NumDeletes + 1);
 				true ->
 					bst(Root,ClientPid,NumDeletes)
@@ -125,7 +134,12 @@ bst(Root,ClientPid,NumDeletes) ->
 			end,
 			bst(Root,ClientPid,NumDeletes);	
 		{garbage_collection} ->
-			Root ! {garbage_collection},
+			if
+				Root == undefined ->
+					no_root;
+				true ->
+					Root ! {garbage_collection}
+			end,			
 			NewRoot = garbage_collection(Root,undefined),
 			bst(NewRoot,ClientPid,0);
 		{die} ->
@@ -304,6 +318,6 @@ garbage_collection(OldRoot,Root) ->
 					garbage_collection(OldRoot,Root)
 			end
 	after
-    	11000 ->
+    	0 ->
       		Root
     end.
