@@ -32,14 +32,18 @@ start() ->
 	InterfaceNode ! {delete,8},
 	InterfaceNode ! {delete,4},
 	InterfaceNode ! {delete,12},
-	InterfaceNode ! {delete,2},
-	InterfaceNode ! {delete,14},
 	InterfaceNode ! {garbage_collection},
+	InterfaceNode ! {insert,6},
+	InterfaceNode ! {insert,10},
+	InterfaceNode ! {contains,6},
+	InterfaceNode ! {contains,10},
 	InterfaceNode ! {contains,8},
 	InterfaceNode ! {contains,4},
 	InterfaceNode ! {contains,12},
 	InterfaceNode ! {contains,2},
 	InterfaceNode ! {contains,14},
+	timer:sleep(10000),
+	InterfaceNode ! {die},
 	
 	Messages2 = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages2]),	
@@ -114,7 +118,14 @@ bst(Root,ClientPid) ->
 		{garbage_collection} ->
 			Root ! {garbage_collection},
 			NewRoot = garbage_collection(Root,undefined),
-			bst(NewRoot,ClientPid)
+			bst(NewRoot,ClientPid);
+		{die} ->
+			if
+				Root == undefined ->
+					die;
+				true ->
+					Root ! {die}
+			end
 	end.
 
 create_tree_node(Value,InterfaceNode) ->
@@ -142,6 +153,20 @@ gc_tree_node(Value,Left,Right,IsActive,InterfaceNode) ->
          	Right ! {garbage_collection}
    	end.
 
+die_tree_node(Left,Right) ->
+	if 
+      	Left == undefined ->
+			no_left_child;
+      	Left /= undefined -> 
+         	Left ! {die}
+   	end,
+	if 
+      	Right == undefined ->
+			no_right_child;
+      	Right /= undefined -> 
+         	Right ! {die}
+   	end.
+
 tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 	receive
     	{insert, ValueToInsert} ->
@@ -156,9 +181,7 @@ tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 		{garbage_collection} ->
 			gc_tree_node(Value,Left,Right,IsActive,InterfaceNode);
 		{die} ->
-			Left ! die,
-			%TODO check if different than undefined
-			Right ! die
+			die_tree_node(Left,Right)
     end.
 
 
