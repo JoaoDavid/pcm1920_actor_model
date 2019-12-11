@@ -27,23 +27,26 @@ start() ->
 	InterfaceNode = spawn(bst_actors, bst, [undefined,self(),0,0,0]),
 	%client_send_random_ops(101,InterfaceNode,99),
 	client_send_ops(insert,15,InterfaceNode),	
-	client_send_ops(delete,15,InterfaceNode),
+	client_send_ops(delete,10,InterfaceNode),
 	InterfaceNode ! {gc},
 	InterfaceNode ! {contains,10},
 	%InterfaceNode ! {insert,10},
 	InterfaceNode ! {contains,10},
-	InterfaceNode ! {insert,2},
+	InterfaceNode ! {contains,15},
 	%InterfaceNode ! {gc},
+	%InterfaceNode ! {die},
 	Messages = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages]),	
 
 	
-	Messages2 = erlang:process_info(self(), messages),
-	io:format("Client Messages: ~p\n", [Messages2]),	
+		
 	client_handle_response(0),
-
+	Messages2 = erlang:process_info(self(), messages),
+	io:format("Client Messages: ~p\n", [Messages2]),
 	MessagesBst = erlang:process_info(InterfaceNode, messages),
 	io:format("Messages in bst: ~p\n", [MessagesBst]),
+	
+	%processes
 	EndPids = erlang:processes(),
 	io:format("~p StartPids: ~p\n", [length(StartPids),StartPids]),
 	io:format("~p EndPids: ~p\n", [length(EndPids),EndPids]),
@@ -100,7 +103,7 @@ bst_gc(Root) ->
 					bst_gc(Root)
 			end
 	after
-		0 ->
+		6 ->
 		 	ok
 	end.
 
@@ -146,6 +149,7 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 			end,			
 			NewRoot = create_tree_node(1,self()),
 			bst_gc(NewRoot),
+			self() ! {resume},
 			bst(NewRoot,ClientPid,NumDeletes,RecSeq+1,SentSeq);
 		{die} ->
 			if
@@ -155,7 +159,8 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 					Root ! {die}
 			end,
 			ClientPid ! {destroyed}
-	end.
+	end,
+	io:format("terminated\n", []).
 
 create_tree_node(Value,InterfaceNode) ->
 	spawn(bst_actors, tree_node, [Value,undefined,undefined,self(),true,InterfaceNode]).
