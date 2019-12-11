@@ -20,20 +20,20 @@
 %This constant is the trigger value to start a garbage collection
 %when the number of deleted tree actors that are still running
 %reach this value, the tree starts garbage collecting
--define(MAX_GARBAGE_NODES, 10).
+-define(MAX_GARBAGE_NODES, -1).
 
 start() ->
 	StartPids = erlang:processes(),
 	InterfaceNode = spawn(bst_actors, bst, [undefined,self(),0,0,0]),
 	%client_send_random_ops(101,InterfaceNode,99),
-	client_send_ops(insert,10,InterfaceNode),
-	client_send_ops(delete,10,InterfaceNode),
-	client_send_ops(insert,11,InterfaceNode),
-	client_send_ops(delete,5,InterfaceNode),
+	client_send_ops(insert,15,InterfaceNode),	
+	client_send_ops(delete,15,InterfaceNode),
+	InterfaceNode ! {gc},
 	InterfaceNode ! {contains,10},
 	%InterfaceNode ! {insert,10},
 	InterfaceNode ! {contains,10},
-	%InterfaceNode ! {garbage_collection},
+	InterfaceNode ! {insert,2},
+	%InterfaceNode ! {gc},
 	Messages = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages]),	
 
@@ -88,23 +88,27 @@ client_handle_response(Counter) ->
 			io:format("N msgs: ~p\n", [Counter])
     end.
 
+bst_gc(Root) ->
+	receive
+        {copy, ValueToInsert} ->
+			if
+				Root == undefined ->
+					NewRoot = create_tree_node(ValueToInsert,self()),
+					bst_gc(NewRoot);
+				true ->
+					Root ! {copy, ValueToInsert},
+					bst_gc(Root)
+			end
+	after
+		0 ->
+		 	ok
+	end.
+
 bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 	receive
 		{Op, Value, Response, Seq} when Seq == SentSeq ->
 			ClientPid ! {Op,Value,Response},
-				if
-					(Op == delete) and (Response == true) ->
-						if
-							NumDeletes + 1 == ?MAX_GARBAGE_NODES ->
-								io:format("mandei limpar:\n", []),
-								self() ! {garbage_collection},
-								bst(Root,ClientPid,0,RecSeq,SentSeq+1);
-							true ->
-								bst(Root,ClientPid,NumDeletes + 1,RecSeq,SentSeq+1)
-						end;						
-				true ->
-					bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq+1)
-				end;
+			bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq+1);
         {insert, ValueToInsert} ->
 			if
 				Root == undefined ->
@@ -131,16 +135,18 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 					Root ! {delete, ValueToDelete, RecSeq}
 			end,
 			bst(Root,ClientPid,NumDeletes,RecSeq+1,SentSeq);	
-		{garbage_collection} ->
+		{gc} ->
+			self() ! {collecting,garbage,true, RecSeq},
 			io:format("Lets collect garbage:\n", []),
 			if
 				Root == undefined ->
 					no_root;
 				true ->
-					Root ! {garbage_collection}
+					Root ! {gc}
 			end,			
-			NewRoot = garbage_collection(Root,undefined),
-			bst(NewRoot,ClientPid,NumDeletes,RecSeq,SentSeq);
+			NewRoot = create_tree_node(1,self()),
+			bst_gc(NewRoot),
+			bst(NewRoot,ClientPid,NumDeletes,RecSeq+1,SentSeq);
 		{die} ->
 			if
 				Root == undefined ->
@@ -152,14 +158,13 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 	end.
 
 create_tree_node(Value,InterfaceNode) ->
-	Pid = spawn(bst_actors, tree_node, [Value,undefined,undefined,self(),true,InterfaceNode]),
-	%register(list_to_atom("node"++integer_to_list(Value)), Pid).
-	Pid.
+	spawn(bst_actors, tree_node, [Value,undefined,undefined,self(),true,InterfaceNode]).
+
 
 gc_tree_node(Value,Left,Right,IsActive,InterfaceNode) ->
 	if
 		IsActive ->							
-			InterfaceNode ! {keep, Value};
+			InterfaceNode ! {copy, Value};
 		true ->
 			collect_garbage
 	end,
@@ -167,13 +172,13 @@ gc_tree_node(Value,Left,Right,IsActive,InterfaceNode) ->
       	Left == undefined ->
 			no_left_child;
       	Left /= undefined -> 
-         	Left ! {garbage_collection}
+         	Left ! {gc}
    	end,
 	if 
       	Right == undefined ->
 			no_right_child;
       	Right /= undefined -> 
-         	Right ! {garbage_collection}
+         	Right ! {gc}
    	end.
 
 die_tree_node(Left,Right) ->
@@ -205,12 +210,12 @@ tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 		{delete, ValueToDelete, Seq} ->
 			{L, R, IsA} = delete(Value, Left, Right, IsActive, InterfaceNode, ValueToDelete, Seq),
 			tree_node(Value,L,R,Father,IsA,InterfaceNode);
-		{garbage_collection} ->
+		{gc} ->
 			gc_tree_node(Value,Left,Right,IsActive,InterfaceNode);
 		{die} ->
 			die_tree_node(Left,Right);
-		{copy, ValueToInsert, Seq} ->
-			{L, R, IsA, _} = insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, Seq),
+		{copy, ValueToInsert} ->
+			{L, R, IsA, Res} = insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, -1),
 			tree_node(Value,L,R,Father,IsA,InterfaceNode)
     end.
 
@@ -294,33 +299,3 @@ delete(Value, Left, Right, IsActive, InterfaceNode, ValueToDelete, Seq) ->
 				{Left, Right, IsActive}
    			end
 	end.
-
-die(Left, Right) ->
-	if 
-    	Left == undefined ->
-			no_left_child;
-      	Left /= undefined -> 
-         	Left ! {die}
-   	end,
-	if 
-    	Right == undefined ->
-			no_left_child;
-      	Right /= undefined -> 
-         	Right ! {die}
-   	end.
-
-garbage_collection(OldRoot,Root) ->
-	receive
-        {keep, ValueToInsert} ->
-			if
-				Root == undefined ->
-					NewRoot = create_tree_node(ValueToInsert,self()),
-					garbage_collection(OldRoot,NewRoot);
-				true ->
-					Root ! {insert, ValueToInsert},
-					garbage_collection(OldRoot,Root)
-			end
-	after
-    	10000 ->
-      		Root
-    end.
