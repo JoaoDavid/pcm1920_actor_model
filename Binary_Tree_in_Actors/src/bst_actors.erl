@@ -20,16 +20,17 @@
 %This constant is the trigger value to start a garbage collection
 %when the number of deleted tree actors that are still running
 %reach this value, the tree starts garbage collecting
--define(MAX_GARBAGE_NODES, 100000).
+-define(MAX_GARBAGE_NODES, 10).
 
 start() ->
 	StartPids = erlang:processes(),
 	InterfaceNode = spawn(bst_actors, bst, [undefined,self(),0,0,0]),
 	%client_send_random_ops(101,InterfaceNode,99),
 	client_send_ops(insert,10,InterfaceNode),
-	client_send_ops(contains,10,InterfaceNode),
 	client_send_ops(delete,10,InterfaceNode),
-	client_send_ops(contains,10,InterfaceNode),
+	InterfaceNode ! {contains,10},
+	InterfaceNode ! {insert,10},
+	InterfaceNode ! {contains,10},
 	%InterfaceNode ! {garbage_collection},
 	Messages = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages]),	
@@ -81,7 +82,7 @@ client_handle_response(Counter) ->
 			io:format("Binary Search Tree destroyed\n", [])
 	after
     	Timeout ->
-      		io:format("Client ending after ~p miliseconds without new messages\n", [Timeout]),
+      		io:format("Client ending...\n", []),
 			io:format("N msgs: ~p\n", [Counter])
     end.
 
@@ -92,18 +93,16 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 				if
 					(Op == delete) and (Response == true) ->
 						if
-							NumDeletes + 1 >= ?MAX_GARBAGE_NODES ->
-								self() ! {garbage_collection};
+							NumDeletes + 1 == ?MAX_GARBAGE_NODES ->
+								io:format("mandei limpar:\n", []),
+								self() ! {garbage_collection},
+								bst(Root,ClientPid,0,RecSeq,SentSeq+1);
 							true ->
-								garbage_not_full
-						end,
-						bst(Root,ClientPid,NumDeletes + 1,RecSeq,SentSeq+1);
+								bst(Root,ClientPid,NumDeletes + 1,RecSeq,SentSeq+1)
+						end;						
 				true ->
 					bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq+1)
 				end;
-		{Op, Value, Response, Seq} when Seq /= SentSeq ->
-			self() ! {Op, Value, Response, Seq},
-			bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq);
         {insert, ValueToInsert} ->
 			if
 				Root == undefined ->
@@ -131,6 +130,7 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 			end,
 			bst(Root,ClientPid,NumDeletes,RecSeq+1,SentSeq);	
 		{garbage_collection} ->
+			io:format("Lets collect garbage:\n", []),
 			if
 				Root == undefined ->
 					no_root;
@@ -138,7 +138,7 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 					Root ! {garbage_collection}
 			end,			
 			NewRoot = garbage_collection(Root,undefined),
-			bst(NewRoot,ClientPid,0,RecSeq,SentSeq);
+			bst(NewRoot,ClientPid,NumDeletes,RecSeq,SentSeq);
 		{die} ->
 			if
 				Root == undefined ->
@@ -315,6 +315,6 @@ garbage_collection(OldRoot,Root) ->
 					garbage_collection(OldRoot,Root)
 			end
 	after
-    	0 ->
+    	10000 ->
       		Root
     end.
