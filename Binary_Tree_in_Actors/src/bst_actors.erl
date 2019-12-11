@@ -28,8 +28,10 @@ start() ->
 	%client_send_random_ops(101,InterfaceNode,99),
 	client_send_ops(insert,10,InterfaceNode),
 	client_send_ops(delete,10,InterfaceNode),
+	client_send_ops(insert,11,InterfaceNode),
+	client_send_ops(delete,5,InterfaceNode),
 	InterfaceNode ! {contains,10},
-	InterfaceNode ! {insert,10},
+	%InterfaceNode ! {insert,10},
 	InterfaceNode ! {contains,10},
 	%InterfaceNode ! {garbage_collection},
 	Messages = erlang:process_info(self(), messages),
@@ -145,7 +147,8 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 					die;
 				true ->
 					Root ! {die}
-			end
+			end,
+			ClientPid ! {destroyed}
 	end.
 
 create_tree_node(Value,InterfaceNode) ->
@@ -156,7 +159,7 @@ create_tree_node(Value,InterfaceNode) ->
 gc_tree_node(Value,Left,Right,IsActive,InterfaceNode) ->
 	if
 		IsActive ->							
-			InterfaceNode ! {reincarnate, Value};
+			InterfaceNode ! {keep, Value};
 		true ->
 			collect_garbage
 	end,
@@ -190,7 +193,11 @@ die_tree_node(Left,Right) ->
 tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 	receive
     	{insert, ValueToInsert, Seq} ->
-			{L, R, IsA} = insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, Seq),
+			{L, R, IsA, Res} = insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, Seq),
+			if
+				Res /= undefined -> InterfaceNode ! {insert, ValueToInsert, Res, Seq};
+				true -> dk
+			end,
 			tree_node(Value,L,R,Father,IsA,InterfaceNode);
 		{contains, ValueToFind, Seq} ->
             contains(Value, Left, Right, IsActive, InterfaceNode, ValueToFind, Seq),
@@ -201,7 +208,10 @@ tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 		{garbage_collection} ->
 			gc_tree_node(Value,Left,Right,IsActive,InterfaceNode);
 		{die} ->
-			die_tree_node(Left,Right)
+			die_tree_node(Left,Right);
+		{copy, ValueToInsert, Seq} ->
+			{L, R, IsA, _} = insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, Seq),
+			tree_node(Value,L,R,Father,IsA,InterfaceNode)
     end.
 
 
@@ -209,32 +219,28 @@ insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, Seq) ->
 	case ValueToInsert of 
      	Value ->
 			if
-			IsActive ->							
-				InterfaceNode ! {insert, ValueToInsert, already_exists, Seq},
-				{Left, Right, IsActive};
+			IsActive ->
+				{Left, Right, IsActive, already_exists};
 			true ->
-				InterfaceNode ! {insert, ValueToInsert, true, Seq},
-				{Left, Right, true}
+				{Left, Right, true, true}
 			end;
       	N when N < Value ->
 			if 
       		Left == undefined ->
 				NewNodePid = create_tree_node(ValueToInsert, InterfaceNode),
-        		InterfaceNode ! {insert, ValueToInsert, true, Seq},
-				{NewNodePid, Right, IsActive};
+				{NewNodePid, Right, IsActive, true};
       		Left /= undefined -> 
          		Left ! {insert, ValueToInsert, Seq},
-				{Left, Right, IsActive}
+				{Left, Right, IsActive, undefined}
    			end;
 		N when N > Value ->
 			if 
       		Right == undefined -> 
         		NewNodePid = create_tree_node(ValueToInsert, InterfaceNode),
-        		InterfaceNode ! {insert, ValueToInsert, true, Seq},
-				{Left, NewNodePid, IsActive};
+				{Left, NewNodePid, IsActive, true};
       		Right /= undefined -> 
          		Right ! {insert, ValueToInsert, Seq},
-				{Left, Right, IsActive}
+				{Left, Right, IsActive, undefined}
    			end
 	end.
 
@@ -305,7 +311,7 @@ die(Left, Right) ->
 
 garbage_collection(OldRoot,Root) ->
 	receive
-        {reincarnate, ValueToInsert} ->
+        {keep, ValueToInsert} ->
 			if
 				Root == undefined ->
 					NewRoot = create_tree_node(ValueToInsert,self()),
