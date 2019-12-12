@@ -40,23 +40,9 @@ start() ->
 	%destroy tree
 	InterfaceNode ! {die}, 
 	
-	
-	Messages = erlang:process_info(self(), messages),
-	io:format("Client Messages: ~p\n", [Messages]),	
-	
-	
-	
-	client_handle_response(0),
-	Messages2 = erlang:process_info(self(), messages),
-	io:format("Client Messages: ~p\n", [Messages2]),
-	MessagesBst = erlang:process_info(InterfaceNode, messages),
-	io:format("Messages in bst: ~p\n", [MessagesBst]),
-	
-	%processes
-	EndPids = erlang:processes(),
-	%io:format("~p StartPids: ~p\n", [length(StartPids),StartPids]),
-	%io:format("~p EndPids: ~p\n", [length(EndPids),EndPids]),
-	io:format("Diff: ~p\n", [length(EndPids)-length(StartPids)]).
+	%print response from interface actor
+	client_handle_response().
+
 
 client_send_ops(_,0,_) -> done;
 client_send_ops(Op,Iteration,InterfaceNode) ->
@@ -77,21 +63,20 @@ client_send_random_ops(Iteration,InterfaceNode,MaxRandomValue) ->
 	client_send_random_ops(Iteration - 1,InterfaceNode,MaxRandomValue).
 
 
-client_handle_response(Counter) ->
+client_handle_response() ->
 	Timeout = 120000,
 	receive
 		{Op, Value, Response} ->
 			io:format("Client Response: ~p ~p ~p\n", [Op, Value, Response]),
-			client_handle_response(Counter + 1);
+			client_handle_response();
 		{destroyed} ->
 			io:format("Binary Search Tree destroyed\n", [])
 	after
 		Timeout ->
-		io:format("Client ending...\n", []),
-		io:format("N msgs: ~p\n", [Counter])
+		io:format("Client ending...\n", [])
 	end.
 
-% --------------------------- BST ---------------------------
+% --------------------------- BST Interface ---------------------------
 
 bst_gc(Root) ->
 	receive
@@ -169,6 +154,7 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive) ->
 			bst(Root,ClientPid,NumDeletes,RecSeq+1,SentSeq,NumActive);
 		{resume} ->	bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive)
 	end.
+
 
 % --------------------------- Tree Node ---------------------------
 
