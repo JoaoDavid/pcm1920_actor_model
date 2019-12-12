@@ -76,7 +76,7 @@ client_send_random_ops(Iteration,InterfaceNode,MaxRandomValue) ->
 	end.
 
 client_handle_response(Counter) ->
-	Timeout = 30000,
+	Timeout = 120000,
 	receive
 		{Op, Value, Response} ->
 			io:format("Client Response: ~p ~p ~p\n", [Op, Value, Response]),
