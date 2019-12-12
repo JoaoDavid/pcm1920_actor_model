@@ -26,12 +26,12 @@ start() ->
 	StartPids = erlang:processes(),
 	InterfaceNode = spawn(bst_actors, bst, [undefined,self(),0,0,0,0]),
 	%client_send_random_ops(101,InterfaceNode,99),
-	client_send_ops(insert,1000,InterfaceNode),	
+	client_send_ops(insert,20000,InterfaceNode),	
 	client_send_ops(delete,500,InterfaceNode),
-	client_handle_response(0),
 	InterfaceNode ! {gc},
-	InterfaceNode ! {insert,1001},
-	%InterfaceNode ! {gc},
+	client_send_ops(delete,20000,InterfaceNode),
+	InterfaceNode ! {gc},
+	InterfaceNode ! {insert,3},
 	%InterfaceNode ! {die},
 	Messages = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages]),	
@@ -76,7 +76,7 @@ client_send_random_ops(Iteration,InterfaceNode,MaxRandomValue) ->
 	end.
 
 client_handle_response(Counter) ->
-	Timeout = 223,
+	Timeout = 30000,
 	receive
 		{Op, Value, Response} ->
 			io:format("Client Response: ~p ~p ~p\n", [Op, Value, Response]),
@@ -89,21 +89,32 @@ client_handle_response(Counter) ->
 		io:format("N msgs: ~p\n", [Counter])
 	end.
 
+
 bst_gc(Root) ->
+	receive
+		{copy, ValueToInsert} ->			
+			Root ! {copy, ValueToInsert},
+			bst_gc(Root);
+		{resume} ->			
+			ok
+	end.
+
+
+bst_gc_new(Root) ->
 	receive
 		{copy, ValueToInsert} ->
 			if
-				Root == undefined ->
-					NewRoot = create_tree_node(ValueToInsert,self()),
-					bst_gc(NewRoot);
-				true ->
+				Root == undefined -> 
+					bst_gc_new(create_tree_node(ValueToInsert, self()));
+				true -> 
 					Root ! {copy, ValueToInsert},
-					bst_gc(Root)
-			end
-	after
-		1 ->
-		ok
+					bst_gc_new(Root)
+			end;
+		{resume} ->			
+			Root
 	end.
+
+
 bst_gc_two(Root,0) -> ok;
 bst_gc_two(Root,N) ->
 	receive
@@ -172,11 +183,14 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive) ->
 				true ->
 					Root ! {gc}
 			end,			
-			NewRoot = create_tree_node(1,self()),
+			%NewRoot = create_tree_node(1,self()),
 			io:format("NumActive ~p  \n", [NumActive]),
-			%bst_gc_one(NewRoot),
-			bst_gc_two(NewRoot,100000),
+			NewRoot = bst_gc_new(undefined),
 			%bst_gc(NewRoot),
+			%bst_gc_one(NewRoot),
+			%bst_gc_two(NewRoot,1500),
+			%bst_gc(NewRoot),
+			%NewRoot = bst_gc_new(undefined),
 			io:format("after bst_gc(NewRoot), \n", []),
 			io:format("after self() ! {resume},, \n", []),
 			bst(NewRoot,ClientPid,NumDeletes,RecSeq+1,SentSeq,NumActive);
