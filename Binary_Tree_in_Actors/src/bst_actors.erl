@@ -26,24 +26,11 @@ start() ->
 	StartPids = erlang:processes(),
 	InterfaceNode = spawn(bst_actors, bst, [undefined,self(),0,0,0,0]),
 	%client_send_random_ops(101,InterfaceNode,99),
-	client_send_ops(insert,15,InterfaceNode),	
-	client_send_ops(delete,10,InterfaceNode),
+	client_send_ops(insert,1000,InterfaceNode),	
+	client_send_ops(delete,500,InterfaceNode),
+	client_handle_response(0),
 	InterfaceNode ! {gc},
-	InterfaceNode ! {contains,15},
-	InterfaceNode ! {contains,14},
-	InterfaceNode ! {contains,13},
-	InterfaceNode ! {contains,12},
-	InterfaceNode ! {contains,11},
-	InterfaceNode ! {gc},
-	InterfaceNode ! {contains,15},
-	InterfaceNode ! {contains,14},
-	InterfaceNode ! {contains,13},
-	InterfaceNode ! {contains,12},
-	InterfaceNode ! {contains,11},
-	InterfaceNode ! {delete,13},
-	InterfaceNode ! {delete,12},
-	InterfaceNode ! {delete,11},
-	InterfaceNode ! {gc},
+	InterfaceNode ! {insert,1001},
 	%InterfaceNode ! {gc},
 	%InterfaceNode ! {die},
 	Messages = erlang:process_info(self(), messages),
@@ -59,8 +46,8 @@ start() ->
 	
 	%processes
 	EndPids = erlang:processes(),
-	io:format("~p StartPids: ~p\n", [length(StartPids),StartPids]),
-	io:format("~p EndPids: ~p\n", [length(EndPids),EndPids]),
+	%io:format("~p StartPids: ~p\n", [length(StartPids),StartPids]),
+	%io:format("~p EndPids: ~p\n", [length(EndPids),EndPids]),
 	io:format("Diff: ~p\n", [length(EndPids)-length(StartPids)]).
 
 client_send_ops(Op,Iteration,InterfaceNode) ->
@@ -122,7 +109,9 @@ bst_gc_two(Root,N) ->
 	receive
 		{copy, ValueToInsert} ->			
 			Root ! {copy, ValueToInsert},
-			bst_gc_two(Root,N-1)
+			bst_gc_two(Root,N-1);
+		{resume} ->			
+			bst_gc_two(Root,0)
 	end.
 
 bst_gc_one(Root) ->
@@ -185,8 +174,8 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive) ->
 			end,			
 			NewRoot = create_tree_node(1,self()),
 			io:format("NumActive ~p  \n", [NumActive]),
-			bst_gc_one(NewRoot),
-			%bst_gc_two(NewRoot,NumActive),
+			%bst_gc_one(NewRoot),
+			bst_gc_two(NewRoot,100000),
 			%bst_gc(NewRoot),
 			io:format("after bst_gc(NewRoot), \n", []),
 			io:format("after self() ! {resume},, \n", []),
@@ -198,13 +187,21 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive) ->
 				true ->
 					Root ! {die}
 			end,
-			ClientPid ! {destroyed}
+			ClientPid ! {destroyed};
+		{resume} ->	bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive)
 	end.
 
 create_tree_node(Value,InterfaceNode) ->
 	spawn(bst_actors, tree_node, [Value,undefined,undefined,self(),true,InterfaceNode]).
 
-
+gc_tree_node(Value,undefined,undefined,IsActive,InterfaceNode) ->
+	if
+		IsActive ->							
+			InterfaceNode ! {copy, Value};
+		true ->
+			collect_garbage
+	end,
+	InterfaceNode ! {resume};
 gc_tree_node(Value,Left,Right,IsActive,InterfaceNode) ->
 	if
 		IsActive ->							
