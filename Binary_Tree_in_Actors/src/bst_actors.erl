@@ -22,10 +22,8 @@
 % --------------------------- Client ---------------------------
 
 start() ->
-	StartPids = erlang:processes(),
 	InterfaceNode = spawn(bst_actors, bst, [undefined,self(),0,0,0,0]),
-
-
+	
 	client_send_ops(insert,20,InterfaceNode),	
 	client_send_ops(delete,10,InterfaceNode),
 	client_send_ops(contains,20,InterfaceNode),
