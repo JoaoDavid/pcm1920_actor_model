@@ -10,7 +10,6 @@
 -export([insert/7,contains/7,delete/7,create_tree_node/2]).
 
 
-
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
@@ -18,8 +17,8 @@
 create_tree_node(Value,InterfaceNode) ->
 	spawn(bst_actors, tree_node, [Value,undefined,undefined,self(),true,InterfaceNode]).
 
-
-
+%Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, Seq
+insert(X, Left, Right, IsActive, _, X, _) -> {Left, Right, not IsActive, already_exists};
 insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, Seq) ->
 	case ValueToInsert of 
 		Value ->

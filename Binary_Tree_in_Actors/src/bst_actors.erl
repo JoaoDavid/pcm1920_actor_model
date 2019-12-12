@@ -37,9 +37,9 @@ start() ->
 	%InterfaceNode ! {die},
 	Messages = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages]),	
-
 	
-		
+	
+	
 	client_handle_response(0),
 	Messages2 = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages2]),
@@ -60,7 +60,7 @@ client_send_ops(Op,Iteration,InterfaceNode) ->
 		true ->
 			done
 	end.
-	
+
 
 client_send_random_ops(Iteration,InterfaceNode,MaxRandomValue) ->
 	OpNumber = rand:uniform(3),
@@ -68,9 +68,9 @@ client_send_random_ops(Iteration,InterfaceNode,MaxRandomValue) ->
 	if
 		Iteration > 0 ->
 			case OpNumber of 
-	     	1 -> InterfaceNode ! {insert,Iteration};
-			2 -> InterfaceNode ! {contains,Value};
-			3 -> InterfaceNode ! {delete,Value}
+				1 -> InterfaceNode ! {insert,Iteration};
+				2 -> InterfaceNode ! {contains,Value};
+				3 -> InterfaceNode ! {delete,Value}
 			end,
 			client_send_random_ops(Iteration - 1,InterfaceNode,MaxRandomValue);
 		true ->
@@ -78,22 +78,22 @@ client_send_random_ops(Iteration,InterfaceNode,MaxRandomValue) ->
 	end.
 
 client_handle_response(Counter) ->
-	Timeout = 0,
+	Timeout = 223,
 	receive
-        {Op, Value, Response} ->
-            io:format("Client Response: ~p ~p ~p\n", [Op, Value, Response]),
+		{Op, Value, Response} ->
+			io:format("Client Response: ~p ~p ~p\n", [Op, Value, Response]),
 			client_handle_response(Counter + 1);
 		{destroyed} ->
 			io:format("Binary Search Tree destroyed\n", [])
 	after
-    	Timeout ->
-      		io:format("Client ending...\n", []),
-			io:format("N msgs: ~p\n", [Counter])
-    end.
+		Timeout ->
+		io:format("Client ending...\n", []),
+		io:format("N msgs: ~p\n", [Counter])
+	end.
 
 bst_gc(Root) ->
 	receive
-        {copy, ValueToInsert} ->
+		{copy, ValueToInsert} ->
 			if
 				Root == undefined ->
 					NewRoot = create_tree_node(ValueToInsert,self()),
@@ -103,8 +103,15 @@ bst_gc(Root) ->
 					bst_gc(Root)
 			end
 	after
-		6 ->
-		 	ok
+		1 ->
+		ok
+	end.
+bst_gc_two(Root,0) -> ok;
+bst_gc_two(Root,N) ->
+	receive
+		{copy, ValueToInsert} ->			
+			Root ! {copy, ValueToInsert},
+			bst_gc_two(Root,N-1)
 	end.
 
 bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
@@ -112,7 +119,7 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 		{Op, Value, Response, Seq} when Seq == SentSeq ->
 			ClientPid ! {Op,Value,Response},
 			bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq+1);
-        {insert, ValueToInsert} ->
+		{insert, ValueToInsert} ->
 			if
 				Root == undefined ->
 					NewRoot = create_tree_node(ValueToInsert,self()),
@@ -140,7 +147,7 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 			bst(Root,ClientPid,NumDeletes,RecSeq+1,SentSeq);	
 		{gc} ->
 			self() ! {collecting,garbage,true, RecSeq},
-			io:format("Lets collect garbage:\n", []),
+			io:format("Lets collect garbage: RecSeq ~p  SentSeq ~p\n", [RecSeq,SentSeq]),
 			if
 				Root == undefined ->
 					no_root;
@@ -148,8 +155,11 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 					Root ! {gc}
 			end,			
 			NewRoot = create_tree_node(1,self()),
-			bst_gc(NewRoot),
+			bst_gc_two(NewRoot,5),
+			%bst_gc(NewRoot),
+			io:format("after bst_gc(NewRoot), \n", []),
 			self() ! {resume},
+			io:format("after self() ! {resume},, \n", []),
 			bst(NewRoot,ClientPid,NumDeletes,RecSeq+1,SentSeq);
 		{die} ->
 			if
@@ -159,8 +169,7 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 					Root ! {die}
 			end,
 			ClientPid ! {destroyed}
-	end,
-	io:format("terminated\n", []).
+	end.
 
 create_tree_node(Value,InterfaceNode) ->
 	spawn(bst_actors, tree_node, [Value,undefined,undefined,self(),true,InterfaceNode]).
@@ -174,35 +183,35 @@ gc_tree_node(Value,Left,Right,IsActive,InterfaceNode) ->
 			collect_garbage
 	end,
 	if 
-      	Left == undefined ->
+		Left == undefined ->
 			no_left_child;
-      	Left /= undefined -> 
-         	Left ! {gc}
-   	end,
+		Left /= undefined -> 
+			Left ! {gc}
+	end,
 	if 
-      	Right == undefined ->
+		Right == undefined ->
 			no_right_child;
-      	Right /= undefined -> 
-         	Right ! {gc}
-   	end.
+		Right /= undefined -> 
+			Right ! {gc}
+	end.
 
 die_tree_node(Left,Right) ->
 	if 
-      	Left == undefined ->
+		Left == undefined ->
 			no_left_child;
-      	Left /= undefined -> 
-         	Left ! {die}
-   	end,
+		Left /= undefined -> 
+			Left ! {die}
+	end,
 	if 
-      	Right == undefined ->
+		Right == undefined ->
 			no_right_child;
-      	Right /= undefined -> 
-         	Right ! {die}
-   	end.
+		Right /= undefined -> 
+			Right ! {die}
+	end.
 
 tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 	receive
-    	{insert, ValueToInsert, Seq} ->
+		{insert, ValueToInsert, Seq} ->
 			{L, R, IsA, Res} = insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, Seq),
 			if
 				Res /= undefined -> InterfaceNode ! {insert, ValueToInsert, Res, Seq};
@@ -210,7 +219,7 @@ tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 			end,
 			tree_node(Value,L,R,Father,IsA,InterfaceNode);
 		{contains, ValueToFind, Seq} ->
-            contains(Value, Left, Right, IsActive, InterfaceNode, ValueToFind, Seq),
+			contains(Value, Left, Right, IsActive, InterfaceNode, ValueToFind, Seq),
 			tree_node(Value,Left,Right,Father,IsActive,InterfaceNode);
 		{delete, ValueToDelete, Seq} ->
 			{L, R, IsA} = delete(Value, Left, Right, IsActive, InterfaceNode, ValueToDelete, Seq),
@@ -222,85 +231,85 @@ tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 		{copy, ValueToInsert} ->
 			{L, R, IsA, Res} = insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, -1),
 			tree_node(Value,L,R,Father,IsA,InterfaceNode)
-    end.
+	end.
 
 
 insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, Seq) ->
 	case ValueToInsert of 
-     	Value ->
+		Value ->
 			if
-			IsActive ->
-				{Left, Right, IsActive, already_exists};
-			true ->
-				{Left, Right, true, true}
+				IsActive ->
+					{Left, Right, IsActive, already_exists};
+				true ->
+					{Left, Right, true, true}
 			end;
-      	N when N < Value ->
+		N when N < Value ->
 			if 
-      		Left == undefined ->
-				NewNodePid = create_tree_node(ValueToInsert, InterfaceNode),
-				{NewNodePid, Right, IsActive, true};
-      		Left /= undefined -> 
-         		Left ! {insert, ValueToInsert, Seq},
-				{Left, Right, IsActive, undefined}
-   			end;
+				Left == undefined ->
+					NewNodePid = create_tree_node(ValueToInsert, InterfaceNode),
+					{NewNodePid, Right, IsActive, true};
+				Left /= undefined -> 
+					Left ! {insert, ValueToInsert, Seq},
+					{Left, Right, IsActive, undefined}
+			end;
 		N when N > Value ->
 			if 
-      		Right == undefined -> 
-        		NewNodePid = create_tree_node(ValueToInsert, InterfaceNode),
-				{Left, NewNodePid, IsActive, true};
-      		Right /= undefined -> 
-         		Right ! {insert, ValueToInsert, Seq},
-				{Left, Right, IsActive, undefined}
-   			end
+				Right == undefined -> 
+					NewNodePid = create_tree_node(ValueToInsert, InterfaceNode),
+					{Left, NewNodePid, IsActive, true};
+				Right /= undefined -> 
+					Right ! {insert, ValueToInsert, Seq},
+					{Left, Right, IsActive, undefined}
+			end
 	end.
 
 contains(Value, Left, Right, IsActive, InterfaceNode, ValueToFind, Seq) ->
 	case ValueToFind of 
-     	Value ->
+		Value ->
 			InterfaceNode ! {contains, ValueToFind, IsActive, Seq};
-      	N when N < Value ->
+		N when N < Value ->
 			if 
-      		Left == undefined -> 
-        		InterfaceNode ! {contains, ValueToFind, false, Seq};  
-      		Left /= undefined -> 
-         		Left ! {contains, ValueToFind, Seq}
-   			end;
+				Left == undefined -> 
+					InterfaceNode ! {contains, ValueToFind, false, Seq};  
+				Left /= undefined -> 
+					Left ! {contains, ValueToFind, Seq}
+			end;
 		N when N > Value ->
 			if 
-      		Right == undefined -> 
-        		InterfaceNode ! {contains, ValueToFind, false, Seq};
-      		Right /= undefined -> 
-         		Right ! {contains, ValueToFind, Seq}
-   			end
+				Right == undefined -> 
+					InterfaceNode ! {contains, ValueToFind, false, Seq};
+				Right /= undefined -> 
+					Right ! {contains, ValueToFind, Seq}
+			end
 	end.
 
 delete(Value, Left, Right, IsActive, InterfaceNode, ValueToDelete, Seq) ->
 	case ValueToDelete of 
-     	Value ->
+		Value ->
 			if
-			IsActive ->							
-				InterfaceNode ! {delete, ValueToDelete, true, Seq},
-				{Left, Right, false};
-			true ->
-				InterfaceNode ! {delete, ValueToDelete, does_not_exist, Seq},
-				{Left, Right, IsActive}
+				IsActive ->							
+					InterfaceNode ! {delete, ValueToDelete, true, Seq},
+					{Left, Right, false};
+				true ->
+					InterfaceNode ! {delete, ValueToDelete, does_not_exist, Seq},
+					{Left, Right, IsActive}
 			end;
-      	N when N < Value ->
+		N when N < Value ->
 			if 
-      		Left == undefined ->
-				InterfaceNode ! {delete, ValueToDelete, does_not_exist, Seq},
-				{Left, Right, IsActive};
-      		Left /= undefined -> 
-         		Left ! {delete, ValueToDelete, Seq},
-				{Left, Right, IsActive}
-   			end;
+				Left == undefined ->
+					InterfaceNode ! {delete, ValueToDelete, does_not_exist, Seq},
+					{Left, Right, IsActive};
+				Left /= undefined -> 
+					Left ! {delete, ValueToDelete, Seq},
+					{Left, Right, IsActive}
+			end;
 		N when N > Value ->
 			if 
-      		Right == undefined -> 
-        		InterfaceNode ! {delete, ValueToDelete, does_not_exist, Seq},
-				{Left, Right, IsActive};
-      		Right /= undefined -> 
-         		Right ! {delete, ValueToDelete, Seq},
-				{Left, Right, IsActive}
-   			end
+				Right == undefined -> 
+					InterfaceNode ! {delete, ValueToDelete, does_not_exist, Seq},
+					{Left, Right, IsActive};
+				Right /= undefined -> 
+					Right ! {delete, ValueToDelete, Seq},
+					{Left, Right, IsActive}
+			end
 	end.
