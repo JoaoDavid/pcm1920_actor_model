@@ -1,26 +1,17 @@
 %% @author Joao David n49448
-%% @doc @todo Add description to bst_actors.
+%% @doc Binary Search Tree using the Actor Model
 
-%  c(bst_actors), bst_actors:start().
-%  regs().
+% HOW TO RUN
+%
+% In the same directory where this file is
+% 1) start erlang using the command: erl
+% 2) run the following command to compile, then run start function
+%     c(bst_actors), bst_actors:start().
 
 -module(bst_actors).
-
-%% ====================================================================
-%% API functions
-%% ====================================================================
 -export([start/0,bst/6,tree_node/6]).
 
-
-
-%% ====================================================================
-%% Internal functions
-%% ====================================================================
-
-%This constant is the trigger value to start a garbage collection
-%when the number of deleted tree actors that are still running
-%reach this value, the tree starts garbage collecting
--define(MAX_GARBAGE_NODES, -1).
+% --------------------------- Client ---------------------------
 
 start() ->
 	StartPids = erlang:processes(),
@@ -89,50 +80,20 @@ client_handle_response(Counter) ->
 		io:format("N msgs: ~p\n", [Counter])
 	end.
 
+% --------------------------- BST ---------------------------
 
 bst_gc(Root) ->
-	receive
-		{copy, ValueToInsert} ->			
-			Root ! {copy, ValueToInsert},
-			bst_gc(Root);
-		{resume} ->			
-			ok
-	end.
-
-
-bst_gc_new(Root) ->
 	receive
 		{copy, ValueToInsert} ->
 			if
 				Root == undefined -> 
-					bst_gc_new(create_tree_node(ValueToInsert, self()));
+					bst_gc(create_tree_node(ValueToInsert, self()));
 				true -> 
 					Root ! {copy, ValueToInsert},
-					bst_gc_new(Root)
+					bst_gc(Root)
 			end;
 		{resume} ->			
 			Root
-	end.
-
-
-bst_gc_two(Root,0) -> ok;
-bst_gc_two(Root,N) ->
-	receive
-		{copy, ValueToInsert} ->			
-			Root ! {copy, ValueToInsert},
-			bst_gc_two(Root,N-1);
-		{resume} ->			
-			bst_gc_two(Root,0)
-	end.
-
-bst_gc_one(Root) ->
-	receive
-		{copy, ValueToInsert} ->			
-			Root ! {copy, ValueToInsert},
-			bst_gc_one(Root)
-	after
-		0 ->
-		ok
 	end.
 
 bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive) ->
@@ -175,24 +136,14 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive) ->
 			end,
 			bst(Root,ClientPid,NumDeletes,RecSeq+1,SentSeq,NumActive);	
 		{gc} ->
-			self() ! {collecting,garbage,true, RecSeq},
-			io:format("Lets collect garbage: RecSeq ~p  SentSeq ~p\n", [RecSeq,SentSeq]),
+			self() ! {garbage,collector,true, RecSeq},
 			if
 				Root == undefined ->
 					no_root;
 				true ->
 					Root ! {gc}
-			end,			
-			%NewRoot = create_tree_node(1,self()),
-			io:format("NumActive ~p  \n", [NumActive]),
-			NewRoot = bst_gc_new(undefined),
-			%bst_gc(NewRoot),
-			%bst_gc_one(NewRoot),
-			%bst_gc_two(NewRoot,1500),
-			%bst_gc(NewRoot),
-			%NewRoot = bst_gc_new(undefined),
-			io:format("after bst_gc(NewRoot), \n", []),
-			io:format("after self() ! {resume},, \n", []),
+			end,
+			NewRoot = bst_gc(undefined),
 			bst(NewRoot,ClientPid,NumDeletes,RecSeq+1,SentSeq,NumActive);
 		{die} ->
 			if
@@ -204,6 +155,8 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive) ->
 			ClientPid ! {destroyed};
 		{resume} ->	bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive)
 	end.
+
+% --------------------------- Tree Node ---------------------------
 
 create_tree_node(Value,InterfaceNode) ->
 	spawn(bst_actors, tree_node, [Value,undefined,undefined,self(),true,InterfaceNode]).
@@ -270,38 +223,11 @@ tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 		{die} ->
 			die_tree_node(Left,Right);
 		{copy, ValueToInsert} ->
-			{L, R, IsA, Res} = insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, -1),
+			{L, R, IsA, _} = insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, -1),
 			tree_node(Value,L,R,Father,IsA,InterfaceNode)
 	end.
 
-copy(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, Seq) ->
-	case ValueToInsert of 
-		Value ->
-			if
-				IsActive ->
-					{Left, Right, IsActive, already_exists};
-				true ->
-					{Left, Right, true, true}
-			end;
-		N when N < Value ->
-			if 
-				Left == undefined ->
-					NewNodePid = create_tree_node(ValueToInsert, InterfaceNode),
-					{NewNodePid, Right, IsActive, true};
-				Left /= undefined -> 
-					Left ! {insert, ValueToInsert, Seq},
-					{Left, Right, IsActive, undefined}
-			end;
-		N when N > Value ->
-			if 
-				Right == undefined -> 
-					NewNodePid = create_tree_node(ValueToInsert, InterfaceNode),
-					{Left, NewNodePid, IsActive, true};
-				Right /= undefined -> 
-					Right ! {insert, ValueToInsert, Seq},
-					{Left, Right, IsActive, undefined}
-			end
-	end.
+% --------------------------- Operations ---------------------------
 
 insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, Seq) ->
 	case ValueToInsert of 
