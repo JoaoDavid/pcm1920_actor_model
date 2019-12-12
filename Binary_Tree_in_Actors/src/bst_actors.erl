@@ -9,7 +9,7 @@
 %% ====================================================================
 %% API functions
 %% ====================================================================
--export([start/0,bst/5,tree_node/6]).
+-export([start/0,bst/6,tree_node/6]).
 
 
 
@@ -24,15 +24,22 @@
 
 start() ->
 	StartPids = erlang:processes(),
-	InterfaceNode = spawn(bst_actors, bst, [undefined,self(),0,0,0]),
+	InterfaceNode = spawn(bst_actors, bst, [undefined,self(),0,0,0,0]),
 	%client_send_random_ops(101,InterfaceNode,99),
 	client_send_ops(insert,15,InterfaceNode),	
 	client_send_ops(delete,10,InterfaceNode),
 	InterfaceNode ! {gc},
-	InterfaceNode ! {contains,10},
-	%InterfaceNode ! {insert,10},
-	InterfaceNode ! {contains,10},
 	InterfaceNode ! {contains,15},
+	InterfaceNode ! {delete,15},
+	InterfaceNode ! {delete,14},
+	InterfaceNode ! {delete,13},
+	InterfaceNode ! {delete,12},
+	InterfaceNode ! {delete,11},
+	InterfaceNode ! {gc},
+	InterfaceNode ! {contains,15},
+	%InterfaceNode ! {insert,10},
+	InterfaceNode ! {contains,11},
+	
 	%InterfaceNode ! {gc},
 	%InterfaceNode ! {die},
 	Messages = erlang:process_info(self(), messages),
@@ -114,20 +121,37 @@ bst_gc_two(Root,N) ->
 			bst_gc_two(Root,N-1)
 	end.
 
-bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
+bst_gc_one(Root) ->
 	receive
+		{copy, ValueToInsert} ->			
+			Root ! {copy, ValueToInsert},
+			bst_gc_one(Root)
+	after
+		0 ->
+		ok
+	end.
+
+bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive) ->
+	io:format("NumActive ~p  \n", [NumActive]),
+	receive
+		{insert, Value, true, Seq} when Seq == SentSeq ->
+			ClientPid ! {insert,Value,true},
+			bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq+1,NumActive+1);
+		{delete, Value, true, Seq} when Seq == SentSeq ->
+			ClientPid ! {insert,Value,true},
+			bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq+1,NumActive-1);
 		{Op, Value, Response, Seq} when Seq == SentSeq ->
 			ClientPid ! {Op,Value,Response},
-			bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq+1);
+			bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq+1,NumActive);		
 		{insert, ValueToInsert} ->
 			if
 				Root == undefined ->
 					NewRoot = create_tree_node(ValueToInsert,self()),
 					self() ! {insert, ValueToInsert, true, RecSeq},
-					bst(NewRoot,ClientPid,NumDeletes,RecSeq+1,SentSeq);
+					bst(NewRoot,ClientPid,NumDeletes,RecSeq+1,SentSeq,NumActive);
 				true ->
 					Root ! {insert, ValueToInsert,RecSeq},
-					bst(Root,ClientPid,NumDeletes,RecSeq+1,SentSeq)
+					bst(Root,ClientPid,NumDeletes,RecSeq+1,SentSeq,NumActive)
 			end;			
 		{contains, ValueToFind} ->
 			if
@@ -136,7 +160,7 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 				true ->
 					Root ! {contains, ValueToFind, RecSeq}
 			end,
-			bst(Root,ClientPid,NumDeletes,RecSeq+1,SentSeq);
+			bst(Root,ClientPid,NumDeletes,RecSeq+1,SentSeq,NumActive);
 		{delete, ValueToDelete} ->
 			if
 				Root == undefined ->
@@ -144,7 +168,7 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 				true ->
 					Root ! {delete, ValueToDelete, RecSeq}
 			end,
-			bst(Root,ClientPid,NumDeletes,RecSeq+1,SentSeq);	
+			bst(Root,ClientPid,NumDeletes,RecSeq+1,SentSeq,NumActive);	
 		{gc} ->
 			self() ! {collecting,garbage,true, RecSeq},
 			io:format("Lets collect garbage: RecSeq ~p  SentSeq ~p\n", [RecSeq,SentSeq]),
@@ -155,12 +179,13 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq) ->
 					Root ! {gc}
 			end,			
 			NewRoot = create_tree_node(1,self()),
-			bst_gc_two(NewRoot,5),
+			io:format("NumActive ~p  \n", [NumActive]),
+			bst_gc_one(NewRoot),
+			%bst_gc_two(NewRoot,NumActive),
 			%bst_gc(NewRoot),
 			io:format("after bst_gc(NewRoot), \n", []),
-			self() ! {resume},
 			io:format("after self() ! {resume},, \n", []),
-			bst(NewRoot,ClientPid,NumDeletes,RecSeq+1,SentSeq);
+			bst(NewRoot,ClientPid,NumDeletes,RecSeq+1,SentSeq,NumActive);
 		{die} ->
 			if
 				Root == undefined ->
