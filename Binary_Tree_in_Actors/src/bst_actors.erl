@@ -3,10 +3,18 @@
 
 % HOW TO RUN
 %
-% In the same directory where this file is
+% Open the console in the same directory where this file is
 % 1) start erlang using the command: erl
 % 2) run the following command to compile, then run start function
 %     c(bst_actors), bst_actors:start().
+
+% OPERATION MESSAGES
+%
+% insert:               {insert, Value}
+% contains:             {contains, Value}
+% delete:               {delete, Value}
+% garbage collector:    {gc}
+% destroy tree:         {die}
 
 -module(bst_actors).
 -export([start/0,bst/6,tree_node/6]).
@@ -19,11 +27,11 @@ start() ->
 	%client_send_random_ops(101,InterfaceNode,99),
 	client_send_ops(insert,20000,InterfaceNode),	
 	client_send_ops(delete,500,InterfaceNode),
-	InterfaceNode ! {gc},
-	client_send_ops(delete,20000,InterfaceNode),
-	InterfaceNode ! {gc},
-	InterfaceNode ! {insert,3},
-	%InterfaceNode ! {die},
+	%InterfaceNode ! {gc},
+	%client_send_ops(delete,20000,InterfaceNode),
+	%InterfaceNode ! {gc},
+	%InterfaceNode ! {insert,3},
+	InterfaceNode ! {die},
 	Messages = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages]),	
 	
@@ -41,30 +49,23 @@ start() ->
 	%io:format("~p EndPids: ~p\n", [length(EndPids),EndPids]),
 	io:format("Diff: ~p\n", [length(EndPids)-length(StartPids)]).
 
+client_send_ops(_,0,_) -> done;
 client_send_ops(Op,Iteration,InterfaceNode) ->
 	InterfaceNode ! {Op,Iteration},
-	if
-		Iteration > 1 ->
-			client_send_ops(Op,Iteration-1,InterfaceNode);
-		true ->
-			done
-	end.
+	client_send_ops(Op,Iteration-1,InterfaceNode).
 
 
+client_send_random_ops(0,_,_) -> done;
 client_send_random_ops(Iteration,InterfaceNode,MaxRandomValue) ->
 	OpNumber = rand:uniform(3),
 	Value = rand:uniform(MaxRandomValue),	
-	if
-		Iteration > 0 ->
-			case OpNumber of 
-				1 -> InterfaceNode ! {insert,Iteration};
-				2 -> InterfaceNode ! {contains,Value};
-				3 -> InterfaceNode ! {delete,Value}
-			end,
-			client_send_random_ops(Iteration - 1,InterfaceNode,MaxRandomValue);
-		true ->
-			done
-	end.
+	case OpNumber of 
+		1 -> InterfaceNode ! {insert,Iteration};
+		2 -> InterfaceNode ! {contains,Value};
+		3 -> InterfaceNode ! {delete,Value}
+	end,
+	client_send_random_ops(Iteration - 1,InterfaceNode,MaxRandomValue).
+
 
 client_handle_response(Counter) ->
 	Timeout = 120000,
@@ -98,6 +99,8 @@ bst_gc(Root) ->
 
 bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive) ->
 	receive
+		{die, tree_destroyed, true, Seq} when Seq == SentSeq ->
+			ClientPid ! {destroyed};
 		{insert, _, _, -1} ->
 			bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive);
 		{insert, Value, true, Seq} when Seq == SentSeq ->
@@ -152,7 +155,8 @@ bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive) ->
 				true ->
 					Root ! {die}
 			end,
-			ClientPid ! {destroyed};
+			self() ! {die, tree_destroyed, true, RecSeq},
+			bst(Root,ClientPid,NumDeletes,RecSeq+1,SentSeq,NumActive);
 		{resume} ->	bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive)
 	end.
 
