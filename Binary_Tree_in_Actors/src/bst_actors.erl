@@ -132,13 +132,14 @@ bst_gc_one(Root) ->
 	end.
 
 bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive) ->
-	io:format("NumActive ~p  \n", [NumActive]),
 	receive
+		{insert, _, _, -1} ->
+			bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq,NumActive);
 		{insert, Value, true, Seq} when Seq == SentSeq ->
 			ClientPid ! {insert,Value,true},
 			bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq+1,NumActive+1);
 		{delete, Value, true, Seq} when Seq == SentSeq ->
-			ClientPid ! {insert,Value,true},
+			ClientPid ! {delete,Value,true},
 			bst(Root,ClientPid,NumDeletes,RecSeq,SentSeq+1,NumActive-1);
 		{Op, Value, Response, Seq} when Seq == SentSeq ->
 			ClientPid ! {Op,Value,Response},
@@ -254,7 +255,7 @@ tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 		{die} ->
 			die_tree_node(Left,Right);
 		{copy, ValueToInsert} ->
-			{L, R, IsA, Res} = insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, -1),
+			{L, R, IsA, Res} = insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, -99),
 			tree_node(Value,L,R,Father,IsA,InterfaceNode)
 	end.
 
