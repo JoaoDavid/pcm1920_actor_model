@@ -24,14 +24,23 @@
 start() ->
 	StartPids = erlang:processes(),
 	InterfaceNode = spawn(bst_actors, bst, [undefined,self(),0,0,0,0]),
-	%client_send_random_ops(101,InterfaceNode,99),
-	client_send_ops(insert,20000,InterfaceNode),	
-	client_send_ops(delete,500,InterfaceNode),
-	%InterfaceNode ! {gc},
-	%client_send_ops(delete,20000,InterfaceNode),
-	%InterfaceNode ! {gc},
-	%InterfaceNode ! {insert,3},
-	InterfaceNode ! {die},
+
+
+	client_send_ops(insert,20,InterfaceNode),	
+	client_send_ops(delete,10,InterfaceNode),
+	client_send_ops(contains,20,InterfaceNode),
+	
+	%collect garbage
+	InterfaceNode ! {gc},
+	client_send_ops(contains,20,InterfaceNode),
+	
+	%random operations
+	client_send_random_ops(5000,InterfaceNode,500),	
+	
+	%destroy tree
+	InterfaceNode ! {die}, 
+	
+	
 	Messages = erlang:process_info(self(), messages),
 	io:format("Client Messages: ~p\n", [Messages]),	
 	
@@ -57,12 +66,13 @@ client_send_ops(Op,Iteration,InterfaceNode) ->
 
 client_send_random_ops(0,_,_) -> done;
 client_send_random_ops(Iteration,InterfaceNode,MaxRandomValue) ->
-	OpNumber = rand:uniform(3),
+	OpNumber = rand:uniform(4),
 	Value = rand:uniform(MaxRandomValue),	
 	case OpNumber of 
 		1 -> InterfaceNode ! {insert,Iteration};
 		2 -> InterfaceNode ! {contains,Value};
-		3 -> InterfaceNode ! {delete,Value}
+		3 -> InterfaceNode ! {delete,Value};
+		4 -> InterfaceNode ! {gc}
 	end,
 	client_send_random_ops(Iteration - 1,InterfaceNode,MaxRandomValue).
 
