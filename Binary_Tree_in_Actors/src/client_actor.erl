@@ -12,7 +12,7 @@
 % Open the console in the same directory where the src files are
 % 1) start erlang using the command: erl
 % 2) run the following command to compile, then run start function
-%     c(client_actor), c(operations), c(tree_actor), c(bst_actor), bst_actors:start().
+%     c(client_actor), c(operations), c(tree_actor), c(bst_actor), client_actor:start().
 
 % OPERATION MESSAGES
 %
@@ -46,7 +46,7 @@ start() ->
 	%destroy tree
 	InterfaceNode ! {die}, 
 	
-	%print response from interface actor
+	%print response from bst actor
 	client_handle_response().
 
 
