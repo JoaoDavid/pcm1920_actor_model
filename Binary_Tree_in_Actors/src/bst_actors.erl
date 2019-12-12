@@ -30,16 +30,20 @@ start() ->
 	client_send_ops(delete,10,InterfaceNode),
 	InterfaceNode ! {gc},
 	InterfaceNode ! {contains,15},
-	InterfaceNode ! {delete,15},
-	InterfaceNode ! {delete,14},
+	InterfaceNode ! {contains,14},
+	InterfaceNode ! {contains,13},
+	InterfaceNode ! {contains,12},
+	InterfaceNode ! {contains,11},
+	InterfaceNode ! {gc},
+	InterfaceNode ! {contains,15},
+	InterfaceNode ! {contains,14},
+	InterfaceNode ! {contains,13},
+	InterfaceNode ! {contains,12},
+	InterfaceNode ! {contains,11},
 	InterfaceNode ! {delete,13},
 	InterfaceNode ! {delete,12},
 	InterfaceNode ! {delete,11},
 	InterfaceNode ! {gc},
-	InterfaceNode ! {contains,15},
-	%InterfaceNode ! {insert,10},
-	InterfaceNode ! {contains,11},
-	
 	%InterfaceNode ! {gc},
 	%InterfaceNode ! {die},
 	Messages = erlang:process_info(self(), messages),
@@ -240,7 +244,7 @@ tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 		{insert, ValueToInsert, Seq} ->
 			{L, R, IsA, Res} = insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, Seq),
 			if
-				Res /= undefined -> InterfaceNode ! {insert, ValueToInsert, Res, Seq};
+				(Res /= undefined) and (Seq /= -1) -> InterfaceNode ! {insert, ValueToInsert, Res, Seq};
 				true -> dk
 			end,
 			tree_node(Value,L,R,Father,IsA,InterfaceNode);
@@ -255,10 +259,38 @@ tree_node(Value,Left,Right,Father,IsActive,InterfaceNode) ->
 		{die} ->
 			die_tree_node(Left,Right);
 		{copy, ValueToInsert} ->
-			{L, R, IsA, Res} = insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, -99),
+			{L, R, IsA, Res} = insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, -1),
 			tree_node(Value,L,R,Father,IsA,InterfaceNode)
 	end.
 
+copy(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, Seq) ->
+	case ValueToInsert of 
+		Value ->
+			if
+				IsActive ->
+					{Left, Right, IsActive, already_exists};
+				true ->
+					{Left, Right, true, true}
+			end;
+		N when N < Value ->
+			if 
+				Left == undefined ->
+					NewNodePid = create_tree_node(ValueToInsert, InterfaceNode),
+					{NewNodePid, Right, IsActive, true};
+				Left /= undefined -> 
+					Left ! {insert, ValueToInsert, Seq},
+					{Left, Right, IsActive, undefined}
+			end;
+		N when N > Value ->
+			if 
+				Right == undefined -> 
+					NewNodePid = create_tree_node(ValueToInsert, InterfaceNode),
+					{Left, NewNodePid, IsActive, true};
+				Right /= undefined -> 
+					Right ! {insert, ValueToInsert, Seq},
+					{Left, Right, IsActive, undefined}
+			end
+	end.
 
 insert(Value, Left, Right, IsActive, InterfaceNode, ValueToInsert, Seq) ->
 	case ValueToInsert of 
